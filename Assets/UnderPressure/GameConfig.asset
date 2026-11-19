@@ -1,0 +1,122 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 143df498cc415934db887a2eac07eeb3, type: 3}
+  m_Name: GameConfig
+  m_EditorClassIdentifier: Assembly-CSharp::UnderPressure.GameConfig
+  columns: 9
+  rows: 7
+  tileSize: 1.6
+  spoutCell: {x: 1, y: 3}
+  spoutDirection: 1
+  goalDistance: 12
+  countdownSeconds: 30
+  secondsPerPiece: 2.6
+  spoutFillSeconds: 1.6
+  moneyPerPiece: 10
+  loopBonus: 100
+  nestedLoopMultiplier: 2
+  beltSpeed: 1.15
+  beltSpacing: 2.2
+  laneWidth: 2.6
+  spawnBag: 0000000000000000000000000100000001000000010000000100000002000000i
+  walkSpeed: 5.2
+  acceleration: 45
+  turnSpeedDegrees: 1080
+  crawlSpeedMultiplier: 0.4
+  vaultSeconds: 0.55
+  climbUpSeconds: 0.32
+  loosePieceSlowdown: 0.16
+  minLooseSpeedMultiplier: 0.55
+  pickupRadius: 1.15
+  unboltSeconds: 0.35
+  unscrewSeconds: 1.4
+  wastedPiecePenalty: 5
+  beltPrefill: 0.3
+  sprintMultiplier: 1.5
+  jumpHeight: 0.7
+  jumpSeconds: 0.45
+  stealCooldown: 0.75
+  flowSpeedSteps:
+  - 0.5
+  - 0.75
+  - 1
+  - 1.5
+  - 2
+  - 3
+  flowSpeedDefault: 2
+  moneyScalesWithFlowSpeed: 1
+  placeProbeTiles: 0.35
+  beltSpeedSteps:
+  - 0.5
+  - 0.75
+  - 1
+  - 1.5
+  - 2
+  - 3
+  beltSpeedDefault: 2
+  beltBonusPerExtraSpeed: 0.5
+  beltSlowPenalty: 0
+  flowBonusPerExtraSpeed: 0.2
+  grimePerChamber: 0.2
+  readyCountdownSeconds: 3
+  gameplayCameraPitch: 48
+  gameplayCameraZoom: 1
+  intermissionCameraPitch: 30
+  intermissionCameraPitchFront: 58
+  intermissionCameraZoom: 1
+  liquids:
+  - name: CLEAN WATER
+    fromChamber: 1
+    color: {r: 0.55, g: 0.85, b: 1, a: 1}
+    glow: {r: 0.25, g: 0.6, b: 1.3, a: 1}
+  - name: TAP WATER?
+    fromChamber: 3
+    color: {r: 0.5, g: 0.8, b: 0.72, a: 1}
+    glow: {r: 0.25, g: 0.7, b: 0.6, a: 1}
+  - name: TOXIC SLIME
+    fromChamber: 4
+    color: {r: 0.25, g: 1, b: 0.45, a: 1}
+    glow: {r: 0.3, g: 2.2, b: 0.7, a: 1}
+  - name: IRRADIATED
+    fromChamber: 6
+    color: {r: 0.75, g: 1, b: 0.15, a: 1}
+    glow: {r: 1.8, g: 3.2, b: 0.3, a: 1}
+  - name: VOID
+    fromChamber: 8
+    color: {r: 0.03, g: 0.02, b: 0.05, a: 1}
+    glow: {r: 0.55, g: 0.15, b: 1.1, a: 1}
+  musicVolume: 0.55
+  musicLeadVolume: 0.7
+  musicHarmonyVolume: 0.3
+  musicVhsAmount: 1
+  panicPiecesAhead: 4
+  musicTempoFollowsFlow: 0.3
+  musicPitchSemitones: -3
+  musicSpeed: 0.84
+  musicPanicVolume: 1.4
+  enableBioReactor: 1
+  enableSprayBooth: 1
+  enableWardrobe: 1
+  closetStripDepth: 1.7
+  freePlayBeltSpeed: 0.35
+  pitRespawnCost: 50
+  pitRespawnDelay: 1.6
+  unlockShowerCapSprays: 1
+  unlockSwimTrunksSprays: 10
+  unlockFloatiesWaterHops: 10
+  unlockSharcCleanPipes: 1000
+  sprayReach: 2.2
+  unlockAllCosmetics: 0
+  resetUnlocksOnPlay: 0
+  screenShakeScale: 1
+  hitStop: 1
+  sfxVolume: 0.8
