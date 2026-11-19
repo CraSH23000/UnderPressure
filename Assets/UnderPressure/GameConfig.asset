@@ -12,67 +12,68 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 143df498cc415934db887a2eac07eeb3, type: 3}
   m_Name: GameConfig
   m_EditorClassIdentifier: Assembly-CSharp::UnderPressure.GameConfig
-  columns: 9
-  rows: 7
+  columns: 8
+  rows: 8
   tileSize: 1.6
   spoutCell: {x: 1, y: 3}
   spoutDirection: 1
-  goalDistance: 12
-  countdownSeconds: 30
-  secondsPerPiece: 2.6
-  spoutFillSeconds: 1.6
-  moneyPerPiece: 10
-  loopBonus: 100
-  nestedLoopMultiplier: 2
-  beltSpeed: 1.15
-  beltSpacing: 2.2
   laneWidth: 2.6
+  goalDistance: 8
+  countdownSeconds: 32
+  secondsPerPiece: 4
+  spoutFillSeconds: 8
+  flowSpeedSteps:
+  - 0.25
+  - 0.5
+  - 1
+  - 2
+  - 4
+  - 8
+  - 16
+  flowSpeedDefault: 2
+  panicPiecesAhead: 4
+  moneyPerPiece: 1
+  moneyScalesWithFlowSpeed: 1
+  loopBonus: 10
+  nestedLoopMultiplier: 2
+  wastedPiecePenalty: 5
+  beltBonusPerExtraSpeed: 0.5
+  beltSlowPenalty: 0
+  flowBonusPerExtraSpeed: 0.2
+  beltSpeed: 0.2
+  beltSpacing: 2
+  beltPrefill: 0.3
   spawnBag: 0000000000000000000000000100000001000000010000000100000002000000i
-  walkSpeed: 5.2
+  beltSpeedSteps:
+  - 0.25
+  - 0.5
+  - 1
+  - 2
+  - 4
+  - 8
+  - 16
+  beltSpeedDefault: 2
+  freePlayBeltSpeed: 0.35
+  walkSpeed: 6
   acceleration: 45
   turnSpeedDegrees: 1080
+  sprintMultiplier: 1.5
+  jumpHeight: 0.7
+  jumpSeconds: 0.45
   crawlSpeedMultiplier: 0.4
   vaultSeconds: 0.55
   climbUpSeconds: 0.32
   loosePieceSlowdown: 0.16
   minLooseSpeedMultiplier: 0.55
   pickupRadius: 1.15
+  placeProbeTiles: 0.35
   unboltSeconds: 0.35
   unscrewSeconds: 1.4
-  wastedPiecePenalty: 5
-  beltPrefill: 0.3
-  sprintMultiplier: 1.5
-  jumpHeight: 0.7
-  jumpSeconds: 0.45
   stealCooldown: 0.75
-  flowSpeedSteps:
-  - 0.5
-  - 0.75
-  - 1
-  - 1.5
-  - 2
-  - 3
-  flowSpeedDefault: 2
-  moneyScalesWithFlowSpeed: 1
-  placeProbeTiles: 0.35
-  beltSpeedSteps:
-  - 0.5
-  - 0.75
-  - 1
-  - 1.5
-  - 2
-  - 3
-  beltSpeedDefault: 2
-  beltBonusPerExtraSpeed: 0.5
-  beltSlowPenalty: 0
-  flowBonusPerExtraSpeed: 0.2
+  pitRespawnCost: 50
+  pitRespawnDelay: 1.6
   grimePerChamber: 0.2
   readyCountdownSeconds: 3
-  gameplayCameraPitch: 48
-  gameplayCameraZoom: 1
-  intermissionCameraPitch: 30
-  intermissionCameraPitchFront: 58
-  intermissionCameraZoom: 1
   liquids:
   - name: CLEAN WATER
     fromChamber: 1
@@ -94,22 +95,15 @@ MonoBehaviour:
     fromChamber: 8
     color: {r: 0.03, g: 0.02, b: 0.05, a: 1}
     glow: {r: 0.55, g: 0.15, b: 1.1, a: 1}
-  musicVolume: 0.55
-  musicLeadVolume: 0.7
-  musicHarmonyVolume: 0.3
-  musicVhsAmount: 1
-  panicPiecesAhead: 4
-  musicTempoFollowsFlow: 0.3
-  musicPitchSemitones: -3
-  musicSpeed: 0.84
-  musicPanicVolume: 1.4
+  gameplayCameraPitch: 48
+  gameplayCameraZoom: 0.85
+  intermissionCameraPitch: 27
+  intermissionCameraPitchFront: 20.1
+  intermissionCameraZoom: 0.598
   enableBioReactor: 1
   enableSprayBooth: 1
   enableWardrobe: 1
   closetStripDepth: 1.7
-  freePlayBeltSpeed: 0.35
-  pitRespawnCost: 50
-  pitRespawnDelay: 1.6
   unlockShowerCapSprays: 1
   unlockSwimTrunksSprays: 10
   unlockFloatiesWaterHops: 10
@@ -117,6 +111,14 @@ MonoBehaviour:
   sprayReach: 2.2
   unlockAllCosmetics: 0
   resetUnlocksOnPlay: 0
+  musicVolume: 0.55
+  musicLeadVolume: 0.7
+  musicHarmonyVolume: 0.3
+  musicVhsAmount: 1
+  musicTempoFollowsFlow: 0.3
+  musicPitchSemitones: -3
+  musicSpeed: 0.84
+  musicPanicVolume: 1.4
   screenShakeScale: 1
   hitStop: 1
   sfxVolume: 0.8

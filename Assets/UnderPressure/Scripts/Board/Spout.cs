@@ -163,7 +163,10 @@ namespace UnderPressure
             float p = Pressure;
             TrackNearestPlayer();
             irisMat.SetColor("_EmissionColor", new Color(1.2f, 0.08f, 0.05f) * (0.6f + p * 3f + Mathf.Sin(Time.time * (4f + p * 20f)) * 0.3f * p));
-            level.localScale = new Vector3(0.1f, 0.52f * Mathf.Lerp(1f, 0.35f, flowDrain), 0.03f);
+            // sight glass: just a sliver during the countdown, filling up as the spout fills, full while it flows
+            float frac = Mathf.Lerp(0.06f, 1f, flowDrain);
+            level.localScale = new Vector3(0.1f, 0.52f * frac, 0.03f);
+            level.localPosition = new Vector3(level.localPosition.x, 0.29f + 0.26f * frac, level.localPosition.z);
             wheelKick = Mathf.MoveTowards(wheelKick, 0f, Mathf.Abs(wheelKick) * 6f * Time.deltaTime + 1f);
             float flowMul = Game.Flow != null ? Game.Flow.SpeedMultiplier : 1f;
             wheelAngle += Time.deltaTime * ((40f + p * p * 900f) * flowMul + wheelKick);

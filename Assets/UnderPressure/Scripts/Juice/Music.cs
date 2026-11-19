@@ -166,9 +166,9 @@ namespace UnderPressure
                         }
                         else
                         {
-                            // gentle loop under the end screen
-                            targetBase = 0.35f;
-                            targetLead = gm.Current == GameManager.State.Won ? 0.4f : 0f;
+                            // off the clock: back to the pre-flow groove (bass, arps, drums), no melody or harmony
+                            targetBase = Game.Players.Count > 0 ? 1f : 0.55f;
+                            targetLead = 0f;
                             if (overTime < 1.1f) pitch = 1f;
                         }
                         break;

@@ -240,8 +240,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8cc283d2aa64821499118c9bfe8cb89d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UnderPressure.GameBootstrap
-  config: {fileID: 0}
-  grime: 0
+  config: {fileID: 11400000, guid: 8c2d70ed14adac54fb85de8a8b3886eb, type: 2}
+  grime: 0.1
   chamberNumber: 1
   decorSeed: 1234
 --- !u!4 &1854136208
