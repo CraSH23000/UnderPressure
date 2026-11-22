@@ -112,3 +112,21 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# ---- Under Pressure project additions ----
+# Local player builds (ship these as GitHub Release zips instead)
+/[Bb]in/
+*_BackUpThisFolder_ButDontShipItWithYourGame/
+*_BurstDebugInformation_DoNotShip/
+# Release packaging output
+/[Rr]elease/
+*.zip
+
+# Blender script caches (CharacterFactory~)
+__pycache__/
+*.pyc
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
