@@ -116,6 +116,7 @@ InitTestScene*.unity*
 # ---- Under Pressure project additions ----
 # Local player builds (ship these as GitHub Release zips instead)
 /[Bb]in/
+/[Vv]ersion */
 *_BackUpThisFolder_ButDontShipItWithYourGame/
 *_BurstDebugInformation_DoNotShip/
 # Release packaging output
