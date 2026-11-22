@@ -26,6 +26,7 @@ namespace UnderPressure
             Flow = null; Manager = null; Hud = null; LevelRoot = null;
             PipePiece.Loose.Clear();
             Closet.All.Clear();
+            VendingMachine.All.Clear();
             Progress.TakePending();
         }
     }

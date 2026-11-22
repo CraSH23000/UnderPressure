@@ -134,9 +134,9 @@ namespace UnderPressure
             var ps = Rect("Help", pp, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -60), new Vector2(1500, 260));
             var help = Popup.MakeText(ps.gameObject,
                 "Esc / Start  —  resume\nR / Select  —  restart\n\n" +
-                "<size=28>PAD: stick move · (A) jump · (X) use · (Y)/(B) rotate · LT sprint\n" +
-                "WASD: Space jump · E use · F/G rotate · L-Shift sprint\n" +
-                "ARROWS: R-Ctrl jump · Enter use · ; / ' rotate · R-Shift sprint</size>", 44, Color.white);
+                "<size=28>PAD: stick move · (A) jump · (X) use · (Y)/(B) rotate · LT dash\n" +
+                "WASD: Space jump · E use · F/G rotate · L-Shift dash\n" +
+                "ARROWS: R-Ctrl jump · Enter use · ; / ' rotate · R-Shift dash</size>", 44, Color.white);
             help.supportRichText = true;
             pausePanel.SetActive(false);
             BuildValveGuide(root);
@@ -273,11 +273,14 @@ namespace UnderPressure
             public RectTransform[] rows;
             public Image[] rowBg, swatch;
             public Text[] label, value;
+            public Image[] badge;        // NEW! stickers on rows with something new
+            public bool[] wasValueNew;   // to burst confetti the moment you land on the new item
+            public float[] badgePop;
             public int frame = -1;
             public float punch, punchDir;
         }
         readonly ClosetPanel[] closetPanels = new ClosetPanel[JoinManager.MaxPlayers];
-        const int ClosetMaxRows = 5;
+        const int ClosetMaxRows = 9; // a base locker has every row
 
         ClosetPanel GetClosetPanel(int player)
         {
@@ -309,6 +312,14 @@ namespace UnderPressure
                 cp.value[i].supportRichText = false;
                 cp.swatch[i] = Rect("Swatch", r, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-54, 0), new Vector2(30, 30)).gameObject.AddComponent<Image>();
                 cp.swatch[i].sprite = Mats.MakeSprite(Mats.CircleTexture);
+                // the NEW! sticker sits half over the row's right end, like it was slapped on
+                var b = Rect("NewBadge", r, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-6, 4), new Vector2(66, 66)).gameObject.AddComponent<Image>();
+                b.sprite = Glyphs.Icon("badge_new");
+                b.preserveAspect = true;
+                b.raycastTarget = false;
+                b.gameObject.SetActive(false);
+                if (cp.badge == null) { cp.badge = new Image[ClosetMaxRows]; cp.wasValueNew = new bool[ClosetMaxRows]; cp.badgePop = new float[ClosetMaxRows]; }
+                cp.badge[i] = b;
             }
             cp.hint = Popup.MakeText(Rect("Hint", cp.root, new Vector2(0, 0), new Vector2(1, 0), new Vector2(0.5f, 0f), new Vector2(0, 8), new Vector2(-16, 34)).gameObject,
                 "", 19, new Color(1f, 1f, 1f, 0.7f));
@@ -316,7 +327,8 @@ namespace UnderPressure
         }
 
         /// <summary>Call every frame while a player is inside a closet (hides itself when no longer called).</summary>
-        public void ShowCloset(int player, Color pc, string title, string[] labels, string[] values, Color[] swatches, int selected, string hint)
+        public void ShowCloset(int player, Color pc, string title, string[] labels, string[] values, Color[] swatches, int selected, string hint,
+            bool[] rowNew = null, bool[] valueNew = null)
         {
             if (player < 0 || player >= closetPanels.Length) return;
             var cp = GetClosetPanel(player);
@@ -337,12 +349,33 @@ namespace UnderPressure
                 cp.rowBg[i].color = sel ? new Color(pc.r, pc.g, pc.b, 0.35f) : new Color(1f, 1f, 1f, 0.05f);
                 cp.label[i].text = labels[i];
                 cp.value[i].text = sel ? "<  " + values[i] + "  >" : values[i];
-                cp.value[i].color = sel ? Color.white : new Color(1f, 1f, 1f, 0.6f);
-                cp.swatch[i].gameObject.SetActive(swatches != null && swatches[i].a > 0f);
-                if (swatches != null) cp.swatch[i].color = swatches[i];
+                // a color row is written in that color (a swatch dot used to cover the name)
+                bool tinted = swatches != null && swatches[i].a > 0f;
+                Color vc = tinted ? new Color(swatches[i].r, swatches[i].g, swatches[i].b, 1f) : Color.white;
+                cp.value[i].color = sel ? vc : new Color(vc.r, vc.g, vc.b, tinted ? 0.85f : 0.6f);
+                cp.swatch[i].gameObject.SetActive(false);
                 float s = sel ? 1f + cp.punch * 0.12f : 1f;
                 cp.value[i].transform.localScale = Vector3.one * s;
                 cp.value[i].rectTransform.anchoredPosition = new Vector2(sel ? cp.punchDir * cp.punch * 14f : 0f, 0f);
+
+                // NEW! sticker: on every row that has something new (so you know where to look); when the item
+                // showing is the new one it grows, wobbles and throws confetti
+                bool rn = rowNew != null && i < rowNew.Length && rowNew[i];
+                bool vn = valueNew != null && i < valueNew.Length && valueNew[i];
+                var badge = cp.badge[i];
+                if (badge.gameObject.activeSelf != rn) { badge.gameObject.SetActive(rn); if (rn) cp.badgePop[i] = 1f; }
+                cp.label[i].color = rn ? new Color(1f, 0.85f, 0.3f) : new Color(1f, 1f, 1f, 0.7f);
+                if (rn)
+                {
+                    float t = Time.unscaledTime;
+                    if (vn && !cp.wasValueNew[i]) { cp.badgePop[i] = 1.4f; UiConfetti(badge.rectTransform, 26); }
+                    else if (vn && Random.value < Time.unscaledDeltaTime * 3f) UiConfetti(badge.rectTransform, 2);
+                    cp.badgePop[i] = Mathf.MoveTowards(cp.badgePop[i], 0f, Time.unscaledDeltaTime * 3f);
+                    float size = (vn ? 1.25f : 0.9f) + Juice.OutBack(Mathf.Clamp01(cp.badgePop[i])) * 0.35f + Mathf.Sin(t * 5f + i) * 0.04f;
+                    badge.rectTransform.localScale = Vector3.one * size;
+                    badge.rectTransform.localRotation = Quaternion.Euler(0, 0, Mathf.Sin(t * (vn ? 7f : 2.5f) + i) * (vn ? 14f : 6f));
+                }
+                cp.wasValueNew[i] = vn;
             }
         }
 
@@ -353,8 +386,51 @@ namespace UnderPressure
             closetPanels[player].punchDir = dir;
         }
 
+        // ------------------------------------------------------------------ UI confetti (for NEW! stickers)
+
+        class Bit { public RectTransform rt; public Image img; public Vector2 vel; public float life, spin, angle; }
+        readonly System.Collections.Generic.List<Bit> bits = new System.Collections.Generic.List<Bit>();
+        static readonly Color[] ConfettiColors =
+        {
+            new Color(1f, 0.85f, 0.2f), new Color(1f, 0.35f, 0.4f), new Color(0.35f, 0.8f, 1f), new Color(0.45f, 1f, 0.5f), new Color(0.85f, 0.5f, 1f),
+        };
+
+        /// <summary>Little paper bits bursting from a UI element.</summary>
+        public void UiConfetti(RectTransform from, int count)
+        {
+            if (from == null) return;
+            for (int k = 0; k < count; k++)
+            {
+                var rt = Rect("Confetti", transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(10, 6));
+                rt.position = from.position;
+                var img = rt.gameObject.AddComponent<Image>();
+                img.raycastTarget = false;
+                img.color = ConfettiColors[Random.Range(0, ConfettiColors.Length)];
+                float a = Random.Range(0f, Mathf.PI * 2f);
+                bits.Add(new Bit { rt = rt, img = img, vel = new Vector2(Mathf.Cos(a), Mathf.Abs(Mathf.Sin(a)) + 0.3f) * Random.Range(180f, 420f), life = Random.Range(0.8f, 1.4f), spin = Random.Range(-720f, 720f) });
+            }
+        }
+
+        void UpdateConfetti()
+        {
+            float dt = Time.unscaledDeltaTime;
+            for (int k = bits.Count - 1; k >= 0; k--)
+            {
+                var b = bits[k];
+                b.life -= dt;
+                if (b.life <= 0f || b.rt == null) { if (b.rt != null) Destroy(b.rt.gameObject); bits.RemoveAt(k); continue; }
+                b.vel += new Vector2(0f, -900f) * dt;
+                b.vel *= 1f - dt * 1.5f;
+                b.rt.anchoredPosition += b.vel * dt;
+                b.angle += b.spin * dt;
+                b.rt.localRotation = Quaternion.Euler(0, 0, b.angle);
+                var c = b.img.color; c.a = Mathf.Clamp01(b.life * 2f); b.img.color = c;
+            }
+        }
+
         void UpdateClosetPanels()
         {
+            UpdateConfetti();
             foreach (var cp in closetPanels)
             {
                 if (cp == null) continue;
@@ -405,7 +481,9 @@ namespace UnderPressure
             var rr = ringRects[Mathf.Clamp(player, 0, ringRects.Length - 1)];
             rr.gameObject.SetActive(true);
             rr.position = cam.WorldToScreenPoint(world);
-            rings[Mathf.Clamp(player, 0, rings.Length - 1)].fillAmount = value;
+            var fill = rings[Mathf.Clamp(player, 0, rings.Length - 1)];
+            fill.fillAmount = value;
+            foreach (var pl in Game.Players) if (pl != null && pl.Index == player) fill.color = pl.Color; // players can change color
             rr.localScale = Vector3.one * (1f + 0.15f * Mathf.Sin(value * Mathf.PI * 6f) * (1f - value) + (value > 0.97f ? 0.3f : 0f));
         }
 

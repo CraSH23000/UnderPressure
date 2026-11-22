@@ -14,7 +14,13 @@ namespace UnderPressure
     public class PlayerInputs : IDisposable
     {
         public readonly InputActionMap Map;
-        public readonly InputAction Move, Use, RotateCW, RotateCCW, Jump, Sprint;
+        public readonly InputAction Move, Use, RotateCW, RotateCCW, Jump, Sprint, Inventory;
+        public readonly InputAction[] ItemButtons = new InputAction[3];
+
+        /// <summary>What the item buttons and the inventory button are called for this player's controls.</summary>
+        public string ItemLabel(int i) => Scheme == ControlScheme.Gamepad ? new[] { "RT", "LB", "RB" }[i]
+            : Scheme == ControlScheme.KeyboardWASD ? new[] { "1", "2", "3" }[i] : new[] { "End", "PgDn", "PgUp" }[i];
+        public string InventoryLabel => Scheme == ControlScheme.Gamepad ? "Select" : Scheme == ControlScheme.KeyboardWASD ? "Tab" : "Backspace";
         public readonly ControlScheme Scheme;
 
         public PlayerInputs(ControlScheme scheme, InputDevice device)
@@ -27,6 +33,8 @@ namespace UnderPressure
             RotateCCW = Map.AddAction("RotateCCW", InputActionType.Button);
             Jump = Map.AddAction("Jump", InputActionType.Button);
             Sprint = Map.AddAction("Sprint", InputActionType.Button);
+            Inventory = Map.AddAction("Inventory", InputActionType.Button);
+            for (int i = 0; i < ItemButtons.Length; i++) ItemButtons[i] = Map.AddAction("Item" + (i + 1), InputActionType.Button);
 
             switch (scheme)
             {
@@ -39,6 +47,10 @@ namespace UnderPressure
                     RotateCCW.AddBinding("<Keyboard>/f");
                     RotateCW.AddBinding("<Keyboard>/g");
                     Sprint.AddBinding("<Keyboard>/leftShift");
+                    Inventory.AddBinding("<Keyboard>/tab");
+                    ItemButtons[0].AddBinding("<Keyboard>/1");
+                    ItemButtons[1].AddBinding("<Keyboard>/2");
+                    ItemButtons[2].AddBinding("<Keyboard>/3");
                     break;
 
                 case ControlScheme.KeyboardArrows:
@@ -56,6 +68,10 @@ namespace UnderPressure
                     RotateCW.AddBinding("<Keyboard>/numpad2");
                     Sprint.AddBinding("<Keyboard>/rightShift");
                     Sprint.AddBinding("<Keyboard>/numpadPeriod");
+                    Inventory.AddBinding("<Keyboard>/backspace");
+                    ItemButtons[0].AddBinding("<Keyboard>/end");
+                    ItemButtons[1].AddBinding("<Keyboard>/pageDown");
+                    ItemButtons[2].AddBinding("<Keyboard>/pageUp");
                     break;
 
                 default:
@@ -66,6 +82,10 @@ namespace UnderPressure
                     RotateCCW.AddBinding("<Gamepad>/buttonNorth");
                     RotateCW.AddBinding("<Gamepad>/buttonEast");
                     Sprint.AddBinding("<Gamepad>/leftTrigger");
+                    Inventory.AddBinding("<Gamepad>/select");
+                    ItemButtons[0].AddBinding("<Gamepad>/rightTrigger");
+                    ItemButtons[1].AddBinding("<Gamepad>/leftShoulder");
+                    ItemButtons[2].AddBinding("<Gamepad>/rightShoulder");
                     break;
             }
 

@@ -12,19 +12,59 @@ namespace UnderPressure
     {
         public const int MaxPlayers = 4;
 
-        public static readonly Color[] PlayerColors =
-        {
-            new Color(0.25f, 0.75f, 1.0f),  // P1 sky blue
-            new Color(1.0f, 0.42f, 0.7f),   // P2 bubblegum
-            new Color(1.0f, 0.62f, 0.18f),  // P3 tangerine
-            new Color(0.68f, 0.45f, 1.0f),  // P4 lilac
-        };
+        /// <summary>Player colors come from the one color list (CritterLook.Colors), limited to the ones marked 'player'.
+        /// Slots P1-P4 default to the first four.</summary>
+        public static bool IsPlayerColor(int i) => i >= 0 && i < CritterLook.Colors.Length && CritterLook.Colors[i].player;
+
+        /// <summary>Default color per slot (before anyone has picked).</summary>
+        public static Color[] PlayerColors => new[] { CritterLook.Colors[0].color, CritterLook.Colors[1].color, CritterLook.Colors[2].color, CritterLook.Colors[3].color };
+
+        public static JoinManager Instance { get; private set; }
 
         public class Slot
         {
             public int index;
             public ControlScheme scheme;
             public InputDevice device;
+            public int colorIndex = -1; // into CritterLook.Colors (a player color)
+            public Color Color => CritterLook.Colors[Mathf.Clamp(colorIndex, 0, CritterLook.Colors.Length - 1)].color;
+            public string ColorName => CritterLook.Colors[Mathf.Clamp(colorIndex, 0, CritterLook.Colors.Length - 1)].name;
+        }
+
+        void OnEnable() => Instance = this;
+
+        public Slot SlotOf(int index) => Slots.Find(s => s.index == index);
+
+        bool Taken(int colorIndex, int exceptSlot) => Slots.Exists(s => s.index != exceptSlot && s.colorIndex == colorIndex);
+
+        /// <summary>Give a slot its color: the one it picked last time if nobody has it, else its default, else the first free one.</summary>
+        public void AssignColor(Slot slot)
+        {
+            if (IsPlayerColor(slot.colorIndex) && !Taken(slot.colorIndex, slot.index)) return;
+            int def = slot.index % 4;
+            int saved = PlayerPrefs.GetInt("up_pcolor" + slot.index, def);
+            foreach (int c in new[] { saved, def })
+                if (IsPlayerColor(c) && !Taken(c, slot.index)) { slot.colorIndex = c; return; }
+            for (int c = 0; c < CritterLook.Colors.Length; c++) if (IsPlayerColor(c) && !Taken(c, slot.index)) { slot.colorIndex = c; return; }
+            slot.colorIndex = def;
+        }
+
+        /// <summary>Step a player's color left or right, skipping colors other players have. Returns false if nothing's free.</summary>
+        public bool CycleColor(int slotIndex, int dir)
+        {
+            var slot = SlotOf(slotIndex);
+            if (slot == null) return false;
+            int n = CritterLook.Colors.Length;
+            for (int k = 1; k < n; k++)
+            {
+                int c = ((slot.colorIndex + dir * k) % n + n) % n;
+                if (!IsPlayerColor(c) || Taken(c, slotIndex)) continue;
+                slot.colorIndex = c;
+                PlayerPrefs.SetInt("up_pcolor" + slotIndex, c);
+                PlayerPrefs.Save();
+                return true;
+            }
+            return false;
         }
 
         public readonly List<Slot> Slots = new List<Slot>();

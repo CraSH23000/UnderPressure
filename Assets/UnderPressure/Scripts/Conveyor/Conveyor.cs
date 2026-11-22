@@ -215,9 +215,29 @@ namespace UnderPressure
         void Spawn(float s, bool pop)
         {
             var pos = PointAt(s, out _);
-            var p = PipePiece.Create(NextFromBag(), Random.Range(0, 4), new Vector3(pos.x, TopY, pos.z));
+            var type = NextFromBag();
+            // the Crossing Sign: some non-crosses turn into crosses (luck can tip it), and arrive with the sign over them
+            bool signed = false, lucky = false;
+            if (pop && type != PipeType.Cross && Items.TeamOwns(Items.CrossingSign) && Items.Roll(ExtraCrossChance(), out lucky))
+            {
+                type = PipeType.Cross;
+                signed = true;
+            }
+            var p = PipePiece.Create(type, Random.Range(0, 4), new Vector3(pos.x, TopY, pos.z));
             items.Add(new Item { piece = p, s = s, seg = SegmentAt(s) });
             if (pop) { p.Spring.SetBase(0.85f, true); p.Spring.Squash(-0.4f); }
+            if (signed) FloatingTag.Create(p, "item_crossing", lucky);
+        }
+
+        /// <summary>Chance to turn a non-cross into a cross, so crosses come crossingSignBoost (25%) more often overall.</summary>
+        float ExtraCrossChance()
+        {
+            if (cfg.spawnBag == null || cfg.spawnBag.Length == 0) return 0f;
+            int crosses = 0;
+            foreach (var t in cfg.spawnBag) if (t == PipeType.Cross) crosses++;
+            float r = crosses / (float)cfg.spawnBag.Length;
+            if (r <= 0f || r >= 1f) return 0f;
+            return Mathf.Clamp01(Mathf.Max(0f, cfg.crossingSignBoost) * r / (1f - r));
         }
 
         // ------------------------------------------------------------------ update

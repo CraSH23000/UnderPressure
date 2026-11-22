@@ -9,7 +9,7 @@ namespace UnderPressure
     public class PlayerController : MonoBehaviour
     {
         enum Mode { Walk, Vault, ClimbUp, Crawl, ClimbDown }
-        enum Act { None, TakeFromBelt, PickLoose, Steal, Place, Unscrew, Swap, Drop, PutOnBelt, Valve, Lever, Blocked, Closet }
+        enum Act { None, TakeFromBelt, PickLoose, Steal, Place, Unscrew, Swap, Drop, PutOnBelt, Valve, Lever, Blocked, Closet, Vending }
 
         public PipePiece Held { get; private set; }
 
@@ -48,8 +48,12 @@ namespace UnderPressure
 
         // jumping / sprinting
         float jumpT = -1f, jumpH;
-        bool sprinting;
+        bool sprinting; // the old hold-to-sprint (kept, but the button now dashes)
         float sprintDustTimer;
+        // dash (Overcooked style): a quick burst in the direction you're going
+        float dashT, dashCooldownT;
+        Vector3 dashDir;
+        public bool Dashing => dashT > 0f;
         public bool Airborne => jumpT >= 0f;
         bool valveActive;   // on a speed control (flow valve or belt lever)
         bool onLever;       // ...and it's the belt lever
@@ -78,12 +82,104 @@ namespace UnderPressure
             var rigGo = Prims.Empty("Rig", transform, Vector3.zero);
             rig = rigGo.AddComponent<PlayerRig>();
             rig.Build(Look);
+            pack = rigGo.AddComponent<PlayerBackpack>(); // turns with the critter
+            pack.Init(rig);
+            Items.EnsureBound(index); // anything owned but not on a button yet gets one
 
-            // floor ring in the player's colour so you can find yourself in a crowd
-            var ringMat = Mats.Lit(Color.Lerp(color, Color.white, 0.2f), 0.2f, 0f, color * 0.6f);
-            Prims.Make(PrimitiveType.Cylinder, transform, new Vector3(0, 0.015f, 0), new Vector3(0.95f, 0.006f, 0.95f), ringMat, null, "FloorRing");
-            Prims.Make(PrimitiveType.Cylinder, transform, new Vector3(0, 0.02f, 0), new Vector3(0.8f, 0.006f, 0.8f),
-                Mats.Lit(Theme.Floor, 0.3f), null, "FloorRingInner");
+            // floor ring in the player's color so you can find yourself in a crowd
+            ringMat = new Material(Mats.Lit(Color.Lerp(color, Color.white, 0.2f), 0.2f, 0f, color * 0.6f)); // its own copy: the color can change
+            ring = Prims.Make(PrimitiveType.Cylinder, transform, new Vector3(0, 0.015f, 0), new Vector3(0.95f, 0.006f, 0.95f), ringMat, null, "FloorRing").transform;
+            ringInner = Prims.Make(PrimitiveType.Cylinder, transform, new Vector3(0, 0.02f, 0), new Vector3(0.8f, 0.006f, 0.8f),
+                Mats.Lit(Theme.Floor, 0.3f), null, "FloorRingInner").transform;
+            FitToBody();
+        }
+
+        Transform ring, ringInner;
+        PlayerBackpack pack;
+        float refillT;
+
+        /// <summary>Spare pieces in this critter's backpack.</summary>
+        public int PackCount => pack != null ? pack.Count : 0;
+
+        /// <summary>The team bought something at a vending machine.</summary>
+        public void OnItemBought(ItemDef item)
+        {
+            if (item != null && item.id == Items.Backpack && pack != null) { pack.Rebuild(); rig.Squash(0.3f); }
+        }
+
+        /// <summary>The backpack's button: stow the piece in your hands, or (hands empty) take the top one out.</summary>
+        void PackButton()
+        {
+            if (pack == null) return;
+            if (Held != null)
+            {
+                if (!pack.HasRoom)
+                {
+                    Nope();
+                    Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.3f), $"PACK FULL  {pack.Count}/{Backpacks.Capacity}", Color.white, 28, 0.8f);
+                    return;
+                }
+                CancelHold();
+                pack.Stash(Held);
+                Held = null;
+                rig.Squash(0.2f);
+                return;
+            }
+            if (pack.Empty)
+            {
+                Nope();
+                Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.3f), "PACK'S EMPTY", Color.white, 28, 0.8f);
+                return;
+            }
+            TakeFromPack();
+        }
+
+        /// <summary>A piece handed to you (a filter from a vending machine): whatever you're holding goes in your
+        /// backpack if there's room, otherwise it's dropped.</summary>
+        public void ReceivePiece(PipePiece p)
+        {
+            if (p == null) return;
+            CancelHold();
+            if (Held != null)
+            {
+                if (pack != null && pack.HasRoom) { pack.Stash(Held); Held = null; }
+                else DropHeld();
+            }
+            PickUp(p);
+        }
+
+        /// <summary>Pull the top spare piece out of the backpack into your hands.</summary>
+        void TakeFromPack()
+        {
+            if (Held != null || pack == null) return;
+            var p = pack.Pop();
+            if (p == null) return;
+            p.SetState(PieceState.Held);
+            p.Spring.SetBase(0.58f);
+            Held = p;
+            p.HoldTarget = HoldPoint();
+            rig.Squash(0.15f);
+        }
+        Material ringMat;
+
+        /// <summary>Change this player's color (picked at their locker): floor ring, HUD, panels, popups.</summary>
+        public void SetPlayerColor(Color c)
+        {
+            Color = c;
+            if (ringMat != null) { Mats.SetBase(ringMat, Color.Lerp(c, Color.white, 0.2f)); Mats.SetEmission(ringMat, c * 0.6f); }
+            if (invPanel != null) { invPanel.SetColor(c); }
+            Game.Hud?.SetRoster(Game.Players);
+        }
+
+        /// <summary>Floor ring and collider follow the critter's size (small / medium / large).</summary>
+        void FitToBody()
+        {
+            float f = Mathf.Clamp(rig.Footprint, 0.6f, 1.8f);
+            if (ring != null) ring.localScale = new Vector3(0.95f * f, 0.006f, 0.95f * f);
+            if (ringInner != null) ringInner.localScale = new Vector3(0.95f * f - 0.15f, 0.006f, 0.95f * f - 0.15f);
+            cc.radius = Mathf.Clamp(0.32f * f, 0.26f, 0.45f);
+            cc.height = Mathf.Clamp(rig.Height * 0.85f, 0.8f, 1.6f);
+            cc.center = new Vector3(0, cc.height * 0.5f + 0.02f, 0);
         }
 
         public void Cheer() => rig.Cheer();
@@ -92,6 +188,7 @@ namespace UnderPressure
         void OnDestroy()
         {
             if (closet != null) closet.Release(this, false);
+            if (invPanel != null) Destroy(invPanel.gameObject);
             input?.Dispose();
             if (highlighted != null) highlighted.SetHighlight(this, false);
         }
@@ -112,6 +209,7 @@ namespace UnderPressure
             UpdateHighlight(null);
             preview.Hide();
             if (Held != null) { Held.gameObject.SetActive(false); Held = null; }
+            pack?.Clear();
             CharredRemains.Spawn(Pos, Color);
             foreach (Transform child in transform) child.gameObject.SetActive(false);
             cc.enabled = false;
@@ -129,7 +227,9 @@ namespace UnderPressure
         void Update()
         {
             float dt = Time.deltaTime;
-            if (dt <= 0f || vaporized) return; // hit-stop / gone
+            if (dt <= 0f || vaporized) { if (invOpen) CloseInventory(); return; } // hit-stop / gone
+            if (invOpen && (arriving || falling || closet != null)) CloseInventory();
+            UpdateBuff(dt);
             if (arriving) { ArrivalUpdate(dt); return; }
             if (falling) { FallUpdate(dt); return; }
             if (closet != null) { ClosetUpdate(dt); return; }
@@ -141,22 +241,42 @@ namespace UnderPressure
             if (valveActive && mv.sqrMagnitude > 0.35f) ExitValve(); // walking away lets go of the valve
             if (holdPiece != null || valveActive) wish = Vector3.zero; // committed while unscrewing / on the valve
 
-            sprinting = mode == Mode.Walk && holdPiece == null && input.Sprint.IsPressed() && wish.sqrMagnitude > 0.04f;
+            // inventory: toggled with its own button; while it's open the critter stands still and the controls drive the list
+            bool menuFrame = invOpen;
+            if (!invOpen && input.Inventory.WasPressedThisFrame() && mode == Mode.Walk && holdPiece == null && !valveActive) OpenInventory();
+            if (invOpen) { InventoryUpdate(); wish = Vector3.zero; menuFrame = true; }
+            else for (int i = 0; i < Items.Slots; i++)
+                    if (input.ItemButtons[i].WasPressedThisFrame()) UseItemButton(i);
+
+            sprinting = false; // hold-to-sprint is disconnected; the same button dashes
+            dashCooldownT -= dt;
+            if (dashCooldownT <= 0f) dashChargesLeft = MaxDashes;
+            if (!menuFrame && input.Sprint.WasPressedThisFrame() && mode == Mode.Walk && holdPiece == null && !valveActive && dashChargesLeft > 0 && dashT <= 0f)
+                StartDash(wish);
             if (mode == Mode.Walk || mode == Mode.Crawl) Locomotion(wish, dt);
             else ScriptedMotion(dt);
             UpdateJump(dt);
 
             // between chambers it's "off the clock": everything still works (nothing scores), except the speed controls
             if (over && valveActive && !onLever) ExitValve();
-            UpdateTarget();
-            if (over && act == Act.Valve)
+            if (menuFrame)
             {
-                act = Held != null ? Act.Drop : Act.None;
+                act = Act.None;
+                UpdateHighlight(null);
                 preview.Hide();
             }
-            HandleInteract(dt);
-            HandleRotate();
-            HandleJump();
+            else
+            {
+                UpdateTarget();
+                if (over && act == Act.Valve)
+                {
+                    act = Held != null ? Act.Drop : Act.None;
+                    preview.Hide();
+                }
+                HandleInteract(dt);
+                HandleRotate();
+                HandleJump();
+            }
 
             if (Held != null) Held.HoldTarget = HoldPoint();
 
@@ -176,6 +296,8 @@ namespace UnderPressure
                     Game.Hud.ShowValvePrompt(Game.Lever.GuideAnchor, UseLabel, Color, "BELT LEVER");
             }
 
+            if (act == Act.Vending && actVending != null && Game.Hud != null)
+                Game.Hud.ShowValvePrompt(actVending.PromptAnchor, UseLabel, Color, actVending.PromptText());
             if (act == Act.Closet && actCloset != null && Game.Hud != null)
                 Game.Hud.ShowValvePrompt(actCloset.PromptAnchor, UseLabel, Color, actCloset.Occupant != null ? "OCCUPIED" : actCloset.Title);
 
@@ -185,7 +307,7 @@ namespace UnderPressure
                 (actPiece != null ? actPiece.transform.position : board.CellCenter(actCell));
             rig.LookAt(look);
             Vector3 flat = vel; flat.y = 0f;
-            if (sprinting && !Airborne)
+            if ((sprinting || Dashing) && !Airborne)
             {
                 sprintDustTimer -= dt;
                 if (sprintDustTimer <= 0f) { sprintDustTimer = 0.12f; Fx.Puff(Pos - facing * 0.3f + Vector3.up * 0.08f, Color.Lerp(Theme.Floor, Color.white, 0.4f), 0.14f); }
@@ -195,7 +317,22 @@ namespace UnderPressure
                 mode == Mode.Vault ? modeT : -1f);
         }
 
-        Vector3 HoldPoint() => Pos + facing * 0.58f + Vector3.up * (0.62f + height + jumpH);
+        void StartDash(Vector3 wish)
+        {
+            Vector3 dir = wish.sqrMagnitude > 0.04f ? wish.normalized : facing;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.001f) return;
+            dashDir = dir.normalized;
+            dashT = cfg.dashDistance * (buffT > 0f ? buffDashDist : 1f) / Mathf.Max(0.1f, cfg.dashSpeed);
+            dashCooldownT = cfg.dashCooldown + dashT;
+            dashChargesLeft--; // with a sip of water you get a second one before the cooldown
+            sprintDustTimer = 0f;
+            rig.Squash(-0.3f);
+            Fx.Puff(Pos - dashDir * 0.25f + Vector3.up * 0.1f, Color.Lerp(Theme.Floor, Color.white, 0.5f), 0.3f);
+            Sfx.Play(Sfx.I != null ? Sfx.I.whoosh : null, 0.55f, 1.35f, 0.08f);
+        }
+
+        Vector3 HoldPoint() => Pos + facing * rig.HoldReach + Vector3.up * (rig.HoldHeight + height + jumpH);
 
         // ================================================================== movement
 
@@ -203,8 +340,17 @@ namespace UnderPressure
         {
             float mult = mode == Mode.Crawl ? cfg.crawlSpeedMultiplier : (Airborne ? 1f : LooseMultiplier(dt));
             if (sprinting) mult *= cfg.sprintMultiplier;
+            if (buffT > 0f) mult *= buffSpeed; // a sip from the bottle
             Vector3 target = wish * cfg.walkSpeed * mult;
-            vel = Vector3.MoveTowards(vel, target, cfg.acceleration * dt);
+            if (dashT > 0f)
+            {
+                // dashing: locked to the dash direction at dash speed, then back to normal (the usual deceleration brakes us)
+                dashT -= dt;
+                vel = dashDir * cfg.dashSpeed;
+                facing = dashDir;
+                wish = Vector3.zero;
+            }
+            else vel = Vector3.MoveTowards(vel, target, cfg.acceleration * dt);
 
             if (wish.sqrMagnitude > 0.01f)
             {
@@ -448,6 +594,8 @@ namespace UnderPressure
         void UpdateTarget()
         {
             if (mode != Mode.Walk && mode != Mode.Crawl) { act = Act.None; UpdateHighlight(null); preview.Hide(); return; }
+            // just put a piece down: the next one comes out of the backpack
+            if (refillT > 0f) { refillT -= Time.deltaTime; if (refillT <= 0f && Held == null && holdPiece == null) TakeFromPack(); }
 
             Vector3 hand = Pos + facing * 0.8f;
             Vector2Int cell = FrontCell();
@@ -459,6 +607,7 @@ namespace UnderPressure
             if (holdPiece != null) { act = holdAct; actPiece = holdPiece; actCell = holdPiece.Cell; }
             else if (valveActive) { act = onLever ? Act.Lever : Act.Valve; actCell = board.Spout.Cell; }
             else if (NearestCloset() != null) act = Act.Closet;
+            else if (NearestVending() != null) act = Act.Vending;
             else if (Game.Lever != null && FlatDist(Game.Lever.transform.position, hand) < 1.0f) act = Act.Lever;
             else if (Held == null)
             {
@@ -499,6 +648,15 @@ namespace UnderPressure
                 }
                 else if (belt.IsOverBelt(hand)) act = Act.PutOnBelt;
                 else act = Act.Drop;
+                // backpack with room: grabbing another piece stows the one in your hands
+                if ((act == Act.PutOnBelt || act == Act.Drop) && pack != null && pack.HasRoom)
+                {
+                    float best = float.MaxValue;
+                    var bp = belt.FindNearest(hand, cfg.pickupRadius);
+                    if (bp != null) { best = FlatDist(bp.transform.position, hand); act = Act.TakeFromBelt; actPiece = bp; }
+                    var lp = NearestLoose(hand, cfg.pickupRadius * 0.85f);
+                    if (lp != null && FlatDist(lp.transform.position, hand) < best) { act = Act.PickLoose; actPiece = lp; }
+                }
             }
 
             // visuals
@@ -516,6 +674,7 @@ namespace UnderPressure
                     break;
                 case Act.Lever:
                 case Act.Closet:
+                case Act.Vending:
                     preview.Hide();
                     break;
                 case Act.Valve:
@@ -614,11 +773,17 @@ namespace UnderPressure
 
             switch (act)
             {
+                case Act.None:
+                    // empty hands, nothing in reach: take a spare out of the backpack
+                    if (Held == null) TakeFromPack();
+                    break;
                 case Act.TakeFromBelt:
+                    if (Held != null) { pack.Stash(Held); Held = null; }
                     belt.Take(actPiece);
                     PickUp(actPiece);
                     break;
                 case Act.PickLoose:
+                    if (Held != null) { pack.Stash(Held); Held = null; }
                     actPiece.SnapRotationToYaw();
                     PickUp(actPiece);
                     break;
@@ -668,6 +833,9 @@ namespace UnderPressure
                     break;
                 case Act.Closet:
                     TryEnterCloset(actCloset);
+                    break;
+                case Act.Vending:
+                    actVending.TryBuy(this);
                     break;
             }
         }
@@ -735,6 +903,7 @@ namespace UnderPressure
             var p = Held;
             Held = null;
             PlacePiece(p, cell);
+            if (pack != null && !pack.Empty) refillT = 0.18f; // the next spare pops out of the backpack
         }
 
         void PlacePiece(PipePiece p, Vector2Int cell)
@@ -877,6 +1046,7 @@ namespace UnderPressure
         {
             shown = on;
             foreach (Transform child in transform) child.gameObject.SetActive(on);
+            pack?.SetShown(on); // the stowed pieces live in the level, not under the critter
         }
 
         /// <summary>Come up through the floor on a little elevator pad (joining, a new chamber, after the pit).</summary>
@@ -929,6 +1099,29 @@ namespace UnderPressure
             if (Mathf.Abs(Pos.x - c.x) < half && Mathf.Abs(Pos.z - c.z) < half) FallInPit();
         }
 
+        /// <summary>Drank something lethal (filter grade 3): keel over, char, and get reprinted at your locker. Free.</summary>
+        void DropDead()
+        {
+            if (falling || vaporized || !shown) return;
+            CancelHold();
+            if (valveActive) ExitValve();
+            UpdateHighlight(null);
+            preview.Hide();
+            if (Held != null) DropHeld();
+            rig.Sad();
+            Sfx.Play(Sfx.RandomGrunt(), 0.9f, GruntPitch(0.7f), 0.05f);
+            Sfx.Play(Sfx.I != null ? Sfx.I.nope : null, 0.6f, 0.5f);
+            CharredRemains.Spawn(Pos, Color);
+            Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.5f), "DON'T DRINK THAT", Mats.Danger, 36, 1.6f);
+            falling = true;
+            fallT = 1f;              // skip the pit animation: straight to "gone, come back soon"
+            fallFrom = Pos;
+            cc.enabled = false;
+            gameObject.layer = Layers.PlayerClimbing;
+            SetShown(false);
+            respawnT = cfg.pitRespawnDelay + 0.6f;
+        }
+
         void FallInPit()
         {
             falling = true;
@@ -978,6 +1171,235 @@ namespace UnderPressure
             }
         }
 
+        // ================================================================== items: inventory, item buttons, water bottle
+
+        InventoryPanel invPanel;
+        InventoryPanel.View invView;
+        bool invOpen, invDetails;
+        int invSel, invOpenedFrame, invLastNy, dashChargesLeft;
+        float invRepeat, buffT, buffFxT;
+        VendingMachine actVending;
+
+        public string InventoryLabel => input.InventoryLabel;
+        int MaxDashes => buffT > 0f ? Mathf.Max(1, buffDashes) : 1;
+
+        // what the current sip does (clean water, or whatever the funnel caught)
+        float buffSpeed = 1f, buffDashDist = 1f, hiccupT;
+        int buffDashes = 1;
+        bool buffHiccups;
+        Color buffColor = new Color(0.5f, 0.85f, 1f);
+
+        /// <summary>Set up the sip's effects from what's in the bottle. Returns the line to pop up.</summary>
+        bool sipLethal;
+
+        string SetSipEffects(string mix)
+        {
+            sipLethal = false;
+            float sp = cfg.waterBottleSpeedMultiplier;
+            int dashes = Mathf.Max(1, cfg.waterBottleDashes);
+            buffSpeed = sp; buffDashes = dashes; buffDashDist = 1f; buffHiccups = false;
+            buffColor = new Color(0.5f, 0.85f, 1f);
+            string m = (mix ?? "").ToUpperInvariant();
+            if (m.Length == 0) return null;
+            // filter grade 3 of anything is lethal
+            if (m.Contains("DEIONIZED") || m.Contains("HYPER-CONCENTRATED")) { sipLethal = true; return m.Contains("DEIONIZED") ? "TOO... PURE..." : "TOO... STRONG..."; }
+            // filtered water: the purer, the better
+            if (m.Contains("PURE WATER")) { buffSpeed = sp + 0.3f; buffDashes = dashes + 1; buffDashDist = 1.3f; buffColor = new Color(0.85f, 0.97f, 1f); return "CRISP!"; }
+            if (m.Contains("FILTERED WATER")) { buffSpeed = sp + 0.15f; buffDashes = dashes + 1; buffColor = new Color(0.55f, 0.85f, 1f); return "REFRESHING!"; }
+            // concentrates hit harder: x2, x3
+            int k = m.Contains("DOUBLE-CONCENTRATED") ? 3 : m.Contains("CONCENTRATED") ? 2 : 1;
+            if (m.Contains("TOXIC"))
+            {
+                // zippy and jittery, with the hiccups
+                buffSpeed = sp + 0.25f * k; buffDashes = dashes + k; buffHiccups = true; hiccupT = 1f / k;
+                buffColor = new Color(0.35f, 1f, 0.3f);
+                return k > 1 ? "BLEEEGH!!  ...ZOOOM!" : "BLEGH!  ...ZOOM!";
+            }
+            if (m.Contains("IRRADIATED"))
+            {
+                // you glow, and your dashes go much further
+                buffDashDist = 1f + 0.7f * k;
+                buffColor = new Color(0.8f, 1f, 0.2f);
+                return k > 1 ? "VERY TINGLY..." : "TINGLY...";
+            }
+            if (m.Contains("VOID"))
+            {
+                // long blinking dashes, lots of them, but no extra walking speed
+                buffSpeed = 1f; buffDashes = dashes + 2 * k; buffDashDist = 1f + k;
+                buffColor = new Color(0.55f, 0.2f, 1f);
+                return "WHERE AM I?";
+            }
+            buffColor = Mats.Liquid;
+            return "TASTES FUNNY";
+        }
+
+        VendingMachine NearestVending()
+        {
+            actVending = null;
+            if (mode != Mode.Walk || Airborne || holdPiece != null || valveActive) return null;
+            float best = 1.0f;
+            foreach (var v in VendingMachine.All)
+            {
+                if (v == null) continue;
+                float d = FlatDist(v.Front, Pos);
+                if (d < best) { best = d; actVending = v; }
+            }
+            return actVending;
+        }
+
+        void OpenInventory()
+        {
+            invOpen = true;
+            invDetails = false;
+            invOpenedFrame = Time.frameCount;
+            invLastNy = 0;
+            CancelHold();
+            if (invPanel == null) invPanel = InventoryPanel.Create(Color);
+            rig.Squash(0.15f);
+        }
+
+        void CloseInventory()
+        {
+            invOpen = false;
+            if (invPanel != null) invPanel.Hide();
+            Sfx.Play(Sfx.I != null ? Sfx.I.tick : null, 0.4f, 1.1f);
+        }
+
+        void InventoryUpdate()
+        {
+            if (Time.frameCount == invOpenedFrame) Items.EnsureBound(Index);
+            var owned = Items.Owned(Index);
+            invSel = Mathf.Clamp(invSel, 0, Mathf.Max(0, owned.Count - 1));
+            // up/down through the list (repeats while held)
+            Vector2 mv = input.MoveValue;
+            int ny = mv.y > 0.55f ? 1 : mv.y < -0.55f ? -1 : 0;
+            invRepeat -= Time.deltaTime;
+            if (ny != 0 && (ny != invLastNy || invRepeat <= 0f) && owned.Count > 1)
+            {
+                invRepeat = ny != invLastNy ? 0.35f : 0.15f;
+                int was = invSel;
+                invSel = Mathf.Clamp(invSel - ny, 0, owned.Count - 1);
+                if (invSel != was) Sfx.Play(Sfx.I != null ? Sfx.I.tick : null, 0.5f, 1.3f);
+            }
+            invLastNy = ny;
+
+            var sel = owned.Count > 0 ? owned[invSel] : null;
+            // press an item button to put the highlighted item on it (swaps if it was on another button)
+            for (int i = 0; i < Items.Slots; i++)
+                if (input.ItemButtons[i].WasPressedThisFrame() && sel != null && sel.active)
+                {
+                    Items.Bind(Index, sel.id, i);
+                    Sfx.Play(Sfx.I != null ? Sfx.I.clank : null, 0.5f, 1.5f);
+                }
+            // Use flips the panel to the highlighted item's details page and back (items are used with their buttons)
+            if (input.Use.WasPressedThisFrame() && sel != null) invDetails = !invDetails;
+            if (sel == null) invDetails = false;
+            if ((input.Inventory.WasPressedThisFrame() && Time.frameCount != invOpenedFrame) || input.Jump.WasPressedThisFrame())
+            {
+                if (invDetails && input.Jump.WasPressedThisFrame()) { invDetails = false; }  // Jump backs out of details first
+                else { CloseInventory(); return; }
+            }
+
+            var binds = Items.Bindings(Index);
+            var v = invView ?? (invView = new InventoryPanel.View());
+            v.title = $"P{Index + 1}  ITEMS";
+            v.pad = input.Scheme == ControlScheme.Gamepad;
+            v.closeKey = input.InventoryLabel;
+            v.detailsKey = UseLabel;
+            if (v.rows.Length != owned.Count) v.rows = new InventoryPanel.Row[owned.Count];
+            for (int i = 0; i < owned.Count; i++)
+            {
+                var d = owned[i];
+                string right = d.hasCharges ? $"{Items.Charges(Index, d.id)}/{Items.MaxCharges(d.id)}"
+                    : d.id == Items.Backpack ? $"{PackCount}/{Backpacks.Capacity}  <color=#FD6>LV {Items.Level(d.id)}</color>"
+                    : (d.active ? "" : $"<color=#FD6>{d.passiveLabel}</color>");
+                v.rows[i] = new InventoryPanel.Row { name = d.name, right = right, icon = d.icon, selected = i == invSel };
+            }
+            for (int i = 0; i < Items.Slots; i++)
+            {
+                var bd = binds[i] != null ? Items.Get(binds[i]) : null;
+                v.slots[i] = new InventoryPanel.Slot { key = input.ItemLabel(i), icon = bd != null ? bd.icon : null, highlight = sel != null && binds[i] == sel.id };
+            }
+            v.assignHint = sel != null && sel.active && System.Array.IndexOf(binds, sel.id) < 0;
+            v.detailName = null;
+            if (invDetails && sel != null)
+            {
+                int b = System.Array.IndexOf(binds, sel.id);
+                v.detailName = sel.name;
+                v.detailIcon = sel.icon;
+                v.detailBody = sel.description;
+                if (sel.hasCharges) v.detailBody += $" <color=#9EF>{Items.Charges(Index, sel.id)}/{Items.MaxCharges(sel.id)} left</color>";
+                if (sel.id == Items.Backpack)
+                    v.detailBody += $"\n<color=#9EF>{PackCount}/{Backpacks.Capacity} carried</color>  <color=#FD6>LV {Items.Level(sel.id)}: {Backpacks.StageName(Items.Level(sel.id))}</color>";
+                v.detailUseKey = sel.active && b >= 0 ? input.ItemLabel(b) : null;
+                v.detailNote = !sel.active ? sel.passiveLabel : b < 0 ? "Not on a button yet" : null;
+                if (sel.id == Items.WaterBottle && Items.BottleMix(Index).Length > 0) v.detailNote = $"Contaminated: {Items.BottleMix(Index)}";
+            }
+            invPanel.Show(Pos + Vector3.up * (rig.Height + 0.25f), v);
+        }
+
+        void UseItemButton(int i)
+        {
+            Items.EnsureBound(Index);
+            string id = Items.Bindings(Index)[i];
+            var d = string.IsNullOrEmpty(id) ? null : Items.Get(id);
+            if (d == null || !Items.Has(Index, id))
+            {
+                Nope();
+                Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.3f), $"NOTHING ON [{input.ItemLabel(i)}]", Color.white, 28, 0.8f);
+                return;
+            }
+            UseItem(d);
+        }
+
+        void UseItem(ItemDef d)
+        {
+            if (d.id == Items.Backpack) { PackButton(); return; }
+            if (d.id != Items.WaterBottle) return;
+            if (rig.Sipping) return; // one sip at a time
+            int c = Items.Charges(Index, d.id);
+            if (c <= 0)
+            {
+                Nope();
+                Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.3f), "BOTTLE'S EMPTY", Mats.Danger, 32, 0.9f);
+                return;
+            }
+            Items.SetCharges(Index, d.id, c - 1);
+            buffT = cfg.waterBottleBuffSeconds;
+            string side = SetSipEffects(Items.BottleMix(Index));
+            dashChargesLeft = MaxDashes;
+            if (side != null) Juice.Delay(0.9f, () => { if (this != null) Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.6f), side, sipLethal ? Mats.Danger : buffColor, 34, 1.4f); });
+            if (sipLethal) { buffT = 0f; Juice.Delay(1.7f, () => { if (this != null) DropDead(); }); }
+            rig.Sip((grip, scale) => VendingMachine.MakeBottle(grip, new Vector3(0f, -0.095f * scale, 0f), scale));
+            Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.35f), $"SIP!  {c - 1} LEFT", new Color(0.5f, 0.85f, 1f), 36, 1.1f);
+            Sfx.Play(Sfx.I != null ? Sfx.I.bloop : null, 0.6f, 1.3f);
+        }
+
+        void UpdateBuff(float dt)
+        {
+            if (buffT <= 0f) return;
+            buffT -= dt;
+            buffFxT -= dt;
+            if (buffFxT <= 0f && !Airborne)
+            {
+                buffFxT = 0.3f;
+                Fx.Burst(Pos + Vector3.up * 0.15f, buffColor, Color.white, 3, 1f, 0.05f, 0.35f, 0.5f);
+            }
+            if (buffHiccups)
+            {
+                hiccupT -= dt;
+                if (hiccupT <= 0f && !Airborne)
+                {
+                    hiccupT = Random.Range(1.2f, 2.6f);
+                    rig.Hop();
+                    Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.25f), "HIC!", buffColor, 26, 0.6f);
+                    Sfx.Play(Sfx.I != null ? Sfx.I.hop : null, 0.5f, 1.8f);
+                }
+            }
+            if (buffT <= 0f)
+                Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.3f), "THIRSTY AGAIN", new Color(0.6f, 0.75f, 0.85f), 26, 0.9f);
+        }
+
         // ================================================================== closets
 
         Closet closet, actCloset;
@@ -993,7 +1415,7 @@ namespace UnderPressure
             float best = 0.85f;
             foreach (var c in Closet.All)
             {
-                if (c == null) continue;
+                if (c == null || !c.UsableBy(this)) continue; // other players' lockers
                 float d = FlatDist(c.Entrance, Pos);
                 if (d < best) { best = d; actCloset = c; }
             }
@@ -1059,6 +1481,10 @@ namespace UnderPressure
             Look = l.Clone();
             Look.Save(Index);
             rig.Build(Look);
+            bool was = cc.enabled;
+            cc.enabled = false; // resizing an enabled controller can push it around
+            FitToBody();
+            cc.enabled = was;
         }
 
         void ClosetUpdate(float dt)
@@ -1126,10 +1552,18 @@ namespace UnderPressure
                     var labels = new string[rows.Length];
                     var values = new string[rows.Length];
                     var swatches = new Color[rows.Length];
-                    for (int i = 0; i < rows.Length; i++) { labels[i] = Closet.RowLabel(rows[i]); values[i] = closet.Value(this, rows[i], out swatches[i]); }
+                    var rowNew = new bool[rows.Length];
+                    var valueNew = new bool[rows.Length];
+                    for (int i = 0; i < rows.Length; i++)
+                    {
+                        labels[i] = Closet.RowLabel(rows[i]);
+                        values[i] = closet.Value(this, rows[i], out swatches[i]);
+                        rowNew[i] = closet.RowNew(this, rows[i]);
+                        valueNew[i] = rowNew[i] && closet.ValueNew(this, rows[i]);
+                    }
                     string move = input.Scheme == ControlScheme.Gamepad ? "STICK" : input.Scheme == ControlScheme.KeyboardWASD ? "WASD" : "ARROWS";
-                    Game.Hud.ShowCloset(Index, Color, $"P{Index + 1}  {closet.Title}", labels, values, swatches, closetRow,
-                        $"{move} / [{RotateCCWLabel}][{RotateCWLabel}] change  ·  [{UseLabel}] done");
+                    Game.Hud.ShowCloset(Index, Color, closet.Kind == ClosetKind.Locker ? closet.Title : $"P{Index + 1}  {closet.Title}", labels, values, swatches, closetRow,
+                        $"{move} / [{RotateCCWLabel}][{RotateCWLabel}] change  ·  [{UseLabel}] done", rowNew, valueNew);
                 }
             }
             rig.LookAt(transform.position + facing * 3f + Vector3.up * 0.5f);
@@ -1146,6 +1580,7 @@ namespace UnderPressure
 
         // button names for on-screen guides, matching this player's controls
         public string UseLabel => input.Scheme == ControlScheme.Gamepad ? "X" : input.Scheme == ControlScheme.KeyboardWASD ? "E" : "Enter";
+        public string JumpLabel => input.Scheme == ControlScheme.Gamepad ? "A" : input.Scheme == ControlScheme.KeyboardWASD ? "Space" : "R-Ctrl";
         public string RotateCCWLabel => input.Scheme == ControlScheme.Gamepad ? "Y" : input.Scheme == ControlScheme.KeyboardWASD ? "F" : ";";
         public string RotateCWLabel => input.Scheme == ControlScheme.Gamepad ? "B" : input.Scheme == ControlScheme.KeyboardWASD ? "G" : "'";
 

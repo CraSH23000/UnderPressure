@@ -11,8 +11,16 @@ namespace UnderPressure
     /// </summary>
     public class ReadyPad : MonoBehaviour
     {
-        public enum Kind { Retry, Next }
+        public enum Kind { Retry, Next, Base, Chamber }
         public Kind Destination { get; private set; }
+        /// <summary>For Kind.Chamber: which chamber it goes to.</summary>
+        public int TargetChamber { get; private set; }
+        public Color Color => color;
+        /// <summary>Short name for the odds readout ("retry", "next", "base", "07").</summary>
+        public string ShortName => Destination == Kind.Retry ? "retry" : Destination == Kind.Next ? "next" : Destination == Kind.Base ? "base" : TargetChamber.ToString("00");
+        /// <summary>Shown while the roulette picks between teleporters.</summary>
+        public string Question => Destination == Kind.Retry ? "RETRY?" : Destination == Kind.Next ? "NEXT CHAMBER?" : Destination == Kind.Base ? "BACK TO BASE?" : $"CHAMBER {TargetChamber:00}?";
+        public string Answer => Destination == Kind.Retry ? "RETRY" : Destination == Kind.Next ? "NEXT CHAMBER" : Destination == Kind.Base ? "BACK TO BASE" : $"CHAMBER {TargetChamber:00}";
         public float Radius { get; private set; } = 1.0f;
         public int Occupants { get; set; }
 
@@ -32,16 +40,113 @@ namespace UnderPressure
 
         public Vector3 EmitterPoint => transform.position + Vector3.up * (ArchHeight - 0.42f) + Vector3.forward * 0.4f;
 
-        public static ReadyPad Create(Transform parent, Vector3 pos, Kind kind, string destinationLabel)
+        public static ReadyPad Create(Transform parent, Vector3 pos, Kind kind, string destinationLabel, float delay = 0f, int targetChamber = 0)
         {
             var go = new GameObject("Teleporter_" + kind);
             go.transform.SetParent(parent, false);
             go.transform.position = pos;
             var p = go.AddComponent<ReadyPad>();
             p.Destination = kind;
-            p.color = kind == Kind.Next ? Mats.Liquid : Theme.AccentOrange;
+            p.TargetChamber = targetChamber;
+            p.color = kind == Kind.Next ? Mats.Liquid : kind == Kind.Base ? new Color(0.85f, 0.92f, 1f)
+                : kind == Kind.Chamber ? (targetChamber <= 1 ? Theme.AccentOrange : Mats.Liquid) : Theme.AccentOrange;
             p.Build(destinationLabel);
+            p.BuildHatch(parent, pos, delay);
             return p;
+        }
+
+        // ================================================================== secret elevator
+        // The teleporter waits in a shaft under the floor. Hazard doors retract into a frame, it rides up, and lands
+        // with a thunk. The frame stays behind as the platform it stands on.
+
+        const float ShaftDepth = 4.2f, ShaftHalfX = 2.35f, ShaftHalfZ = 1.5f;
+        const float DoorTime = 0.5f, RideTime = 1.35f;
+        Transform hatch, doorL, doorR;
+        Renderer shaft;
+        Material shaftDark, shaftPlate;
+        float elevT, elevDelay;
+        bool landed, riding;
+
+        /// <summary>True once it has risen and landed (players only count as standing on it after that).</summary>
+        public bool Risen => landed;
+
+        void BuildHatch(Transform parent, Vector3 pos, float delay)
+        {
+            elevDelay = delay;
+            var darkSteel = Mats.Lit(new Color(0.16f, 0.17f, 0.2f), 0.6f, 0.8f);
+            var hazardY = Mats.Lit(Theme.Hazard, 0.4f);
+            var ink = Mats.Lit(Theme.Ink, 0.5f, 0.4f);
+            hatch = new GameObject("TeleporterHatch").transform;
+            hatch.SetParent(parent, false);
+            hatch.position = new Vector3(pos.x, 0f, pos.z);
+            // the dark shaft (drawn just above the floor, so it hides the teleporter until it pokes out)
+            shaftDark = Mats.Lit(new Color(0.01f, 0.01f, 0.015f), 0f);
+            shaftPlate = Mats.Lit(new Color(0.3f, 0.32f, 0.36f), 0.5f, 0.7f);
+            shaft = Prims.Make(PrimitiveType.Cube, hatch, new Vector3(0, 0.006f, 0), new Vector3(ShaftHalfX * 2f, 0.008f, ShaftHalfZ * 2f), shaftDark, null, "Shaft").GetComponent<Renderer>();
+            // frame
+            float fw = 0.14f;
+            for (int s = -1; s <= 1; s += 2)
+            {
+                Prims.Make(PrimitiveType.Cube, hatch, new Vector3(0, 0.03f, s * (ShaftHalfZ + fw * 0.5f)), new Vector3(ShaftHalfX * 2f + fw * 2f, 0.05f, fw), darkSteel, null, "Frame");
+                Prims.Make(PrimitiveType.Cube, hatch, new Vector3(s * (ShaftHalfX + fw * 0.5f), 0.03f, 0), new Vector3(fw, 0.05f, ShaftHalfZ * 2f), darkSteel, null, "Frame");
+            }
+            // two doors that retract sideways into the frame (scaled from their outer edge)
+            for (int s = -1; s <= 1; s += 2)
+            {
+                var d = Prims.Empty(s < 0 ? "DoorL" : "DoorR", hatch, new Vector3(s * ShaftHalfX, 0.018f, 0)).transform;
+                Prims.Make(PrimitiveType.Cube, d, new Vector3(-s * ShaftHalfX * 0.5f, 0, 0), new Vector3(ShaftHalfX, 0.02f, ShaftHalfZ * 2f), darkSteel, null, "Door");
+                // hazard stripes along the meeting edge
+                for (int i = 0; i < 10; i++)
+                {
+                    float z = -ShaftHalfZ + (i + 0.5f) * ShaftHalfZ * 2f / 10f;
+                    Prims.Make(PrimitiveType.Cube, d, new Vector3(-s * (ShaftHalfX - 0.12f), 0.012f, z), new Vector3(0.22f, 0.006f, ShaftHalfZ * 0.2f - 0.01f),
+                        (i & 1) == 0 ? hazardY : ink, null, "Stripe");
+                }
+                if (s < 0) doorL = d; else doorR = d;
+            }
+            // start in the shaft
+            transform.position = pos - Vector3.up * ShaftDepth;
+            rise = 1f; // (the old pop-up scale is not used any more)
+            transform.localScale = Vector3.one;
+            elevT = 0f;
+        }
+
+        void UpdateElevator(float dt)
+        {
+            if (landed || hatch == null) return;
+            if (elevDelay > 0f) { elevDelay -= dt; return; }
+            if (elevT == 0f) Sfx.Play(Sfx.I != null ? Sfx.I.clank : null, 0.6f, 0.7f, 0f);
+            elevT += dt;
+            // doors retract
+            float open = Juice.OutCubic(Mathf.Clamp01(elevT / DoorTime));
+            doorL.localScale = doorR.localScale = new Vector3(Mathf.Max(0.0001f, 1f - open), 1f, 1f);
+            // ride up: ease in, ease out, then a little settle
+            float u = Mathf.Clamp01((elevT - DoorTime * 0.8f) / RideTime);
+            if (u > 0f && !riding)
+            {
+                riding = true;
+                Sfx.Play(Sfx.I != null ? Sfx.I.creak : null, 0.6f, 0.8f, 0f);
+                Sfx.Play(Sfx.I != null ? Sfx.I.hum : null, 0.35f, 0.6f, 0f);
+            }
+            Vector3 p = hatch.position;
+            transform.position = new Vector3(p.x, -ShaftDepth * (1f - Mathf.SmoothStep(0f, 1f, u)), p.z);
+            if (u >= 1f)
+            {
+                landed = true;
+                transform.position = new Vector3(p.x, 0f, p.z);
+                shaft.sharedMaterial = shaftPlate; // the shaft becomes the platform it stands on
+                Sfx.Play(Sfx.I != null ? Sfx.I.thunk : null, 0.9f, 0.7f, 0f);
+                Sfx.Play(Sfx.I != null ? Sfx.I.clunk : null, 0.6f, 0.9f, 0f);
+                Game.Cam?.AddTrauma(0.25f);
+                for (int c = -1; c <= 1; c += 2)
+                    for (int e = -1; e <= 1; e += 2)
+                        Fx.Burst(new Vector3(p.x + c * ShaftHalfX, 0.1f, p.z + e * ShaftHalfZ), new Color(0.75f, 0.77f, 0.8f), new Color(0.55f, 0.56f, 0.58f), 8, 1.6f, 0.14f, 0.6f, -0.05f);
+            }
+        }
+
+        void OnDestroy()
+        {
+            if (hatch != null) Destroy(hatch.gameObject);
         }
 
         void Build(string destination)
@@ -179,7 +284,8 @@ namespace UnderPressure
             lr.anchoredPosition = new Vector2(0, -68f);
             lr.sizeDelta = new Vector2(420, 36);
             led.AddComponent<Image>().color = new Color(0.03f, 0.04f, 0.04f);
-            Line(rt, destination, 24, -68f, Destination == Kind.Next ? new Color(0.35f, 1f, 0.5f) : new Color(1f, 0.65f, 0.2f), FontStyle.Bold);
+            Line(rt, destination, 24, -68f, Destination == Kind.Next || (Destination == Kind.Chamber && TargetChamber > 1) ? new Color(0.35f, 1f, 0.5f)
+                : Destination == Kind.Base ? new Color(0.75f, 0.88f, 1f) : new Color(1f, 0.65f, 0.2f), FontStyle.Bold);
         }
 
         static Text Line(RectTransform parent, string text, int size, float y, Color c, FontStyle style = FontStyle.Bold)
@@ -250,6 +356,7 @@ namespace UnderPressure
 
         public bool Contains(Vector3 p)
         {
+            if (!landed) return false;
             Vector3 d = p - transform.position;
             d.y = 0f;
             return d.magnitude < Radius;
@@ -274,8 +381,7 @@ namespace UnderPressure
         void Update()
         {
             float dt = Time.unscaledDeltaTime;
-            rise = Mathf.MoveTowards(rise, 1f, dt * 2.2f);
-            transform.localScale = new Vector3(1f, Juice.OutBack(rise), 1f);
+            UpdateElevator(dt);
             flash = Mathf.MoveTowards(flash, 0f, dt * 3f);
 
             if (spent && strikeT > 0.45f) charge = Mathf.MoveTowards(charge, 0f, dt * 3f); // drained

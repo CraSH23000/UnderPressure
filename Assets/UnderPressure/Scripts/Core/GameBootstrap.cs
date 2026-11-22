@@ -27,6 +27,8 @@ namespace UnderPressure
 
         // run state (survives restarts and chamber changes)
         public int ChamberNumber { get; private set; }
+        /// <summary>In the base (lockers, shop, practice board, no clock) rather than a test chamber.</summary>
+        public bool InBase { get; private set; }
         public float CurrentGrime { get; private set; }
         public int Bank { get; set; }
         /// <summary>Set by the teleporter: players materialise with sparks when the next level builds.</summary>
@@ -40,6 +42,8 @@ namespace UnderPressure
         Light sun;
         VolumeProfile post;
         float playerSpawnX, playerSpawnZ;
+        float[] lockerXs = new float[0];
+        const float BaseMachineSpacing = 1.8f; // gaps wide enough to see the bottle on the machine's sides
         Rect walkArea;
 
         void Awake()
@@ -70,19 +74,34 @@ namespace UnderPressure
 #if !UNITY_EDITOR
             if (PlayerPrefs.HasKey("up_display")) GameSettings.ApplyDisplay();
 #endif
+            InBase = cfg.startInBase;
             SetupLighting();
             BuildLevel(cfg);
+        }
+
+        /// <summary>How grimy chamber n is: the Inspector's starting grime, plus a bit per chamber after the starting one.</summary>
+        public float GrimeFor(int n) => Mathf.Clamp01(grime + (n - chamberNumber) * (Game.Config != null ? Game.Config.grimePerChamber : 0.2f));
+
+        /// <summary>Teleport to a chamber by number.</summary>
+        public void GoToChamber(int n)
+        {
+            InBase = false;
+            ChamberNumber = Mathf.Max(1, n);
+            CurrentGrime = GrimeFor(ChamberNumber);
+            Restart();
+        }
+
+        /// <summary>Teleport back to the base. It's as grimy as the deepest chamber you've reached.</summary>
+        public void GoToBase()
+        {
+            InBase = true;
+            Restart();
         }
 
         public void Restart() => StartCoroutine(RestartCo());
 
         /// <summary>Teleport to the next chamber: number goes up, and so does the grime.</summary>
-        public void NextChamber()
-        {
-            ChamberNumber++;
-            CurrentGrime = Mathf.Clamp01(CurrentGrime + (Game.Config != null ? Game.Config.grimePerChamber : 0.2f));
-            Restart();
-        }
+        public void NextChamber() => GoToChamber(ChamberNumber + 1);
 
         IEnumerator RestartCo()
         {
@@ -101,8 +120,10 @@ namespace UnderPressure
             // tweaking the Inspector values still takes effect on the next (re)build
             if (!Mathf.Approximately(grime, lastInspectorGrime)) { CurrentGrime = grime; lastInspectorGrime = grime; }
             if (chamberNumber != lastInspectorChamber) { ChamberNumber = chamberNumber; lastInspectorChamber = chamberNumber; }
-            Theme.Apply(CurrentGrime);
-            Theme.ApplyLiquid(ChamberNumber, cfg);
+            if (!InBase) Progress.ReachedChamber(ChamberNumber);
+            int furthest = Progress.Furthest;
+            Theme.Apply(InBase ? GrimeFor(furthest) : CurrentGrime);
+            Theme.ApplyLiquid(InBase ? furthest : ChamberNumber, cfg);
             Mats.Init();
             ApplyLighting();
             level = new GameObject("UnderPressure_Level");
@@ -119,21 +140,20 @@ namespace UnderPressure
             float xL = boardMinX - lane - beltHalfWidth, xR = boardMaxX + lane + beltHalfWidth;
             float zB = boardMinZ - lane - beltHalfWidth, zT = boardMaxZ + lane + beltHalfWidth;
             // the belt is floor-level, so the walkable area runs right out to its outer edge
-            // cosmetic closets live in the back wall, behind a strip of floor past the top belt
+            // one locker per player (all three closets in one), set into the back wall behind a strip of floor past the top belt
             var kinds = new System.Collections.Generic.List<ClosetKind>();
-            if (cfg.enableBioReactor) kinds.Add(ClosetKind.BioReactor);
-            if (cfg.enableSprayBooth) kinds.Add(ClosetKind.SprayBooth);
-            if (cfg.enableWardrobe) kinds.Add(ClosetKind.Wardrobe);
+            if (cfg.enableLockers) for (int i = 0; i < JoinManager.MaxPlayers; i++) kinds.Add(ClosetKind.Locker);
             bool closets = kinds.Count > 0;
             float zBack = zT + beltHalfWidth + (closets ? Mathf.Max(1.1f, cfg.closetStripDepth) : 1.1f);
-            var walk = Rect.MinMaxRect(xL - beltHalfWidth, zB - beltHalfWidth, xR + beltHalfWidth, closets ? zBack - 0.3f : zT + beltHalfWidth);
+            // vending machines stand against the back wall on the right (none on the right wall any more)
+            const bool vending = false;
+            var walk = Rect.MinMaxRect(xL - beltHalfWidth, zB - beltHalfWidth, xR + beltHalfWidth + (vending ? 1.0f : 0f), closets ? zBack - 0.3f : zT + beltHalfWidth);
             walkArea = walk;
-            float roomL = xL - beltHalfWidth - 1.3f, roomR = xR + beltHalfWidth + 1.3f;
+            float roomL = xL - beltHalfWidth - 1.3f, roomR = xR + beltHalfWidth + 1.3f + (vending ? 0.7f : 0f);
             var closetXs = new float[kinds.Count];
             {
                 const float spacing = 2.1f;
-                bool roomy = roomR - roomL > 19f; // matches ChamberBuilder: under the observation window if there is one
-                float cx = roomy ? roomR - 5.35f : roomR - 1.6f - (kinds.Count - 1) * spacing * 0.5f;
+                float cx = roomL + 1.5f + (kinds.Count - 1) * spacing * 0.5f; // lockers on the far left
                 for (int i = 0; i < kinds.Count; i++) closetXs[i] = cx + (i - (kinds.Count - 1) * 0.5f) * spacing;
             }
 
@@ -156,16 +176,42 @@ namespace UnderPressure
                 xRight = roomR,
                 zBack = zBack,
                 closetXs = closetXs,
+                backClear = cfg.enableVendingMachine ? new Vector2(roomR - 0.6f - MachineCount(cfg) * BaseMachineSpacing, roomR) : Vector2.zero,
+                hasVending = vending,
+                vendingZ = (zB + zT) * 0.5f,
                 zFront = zB - beltHalfWidth - 3f,
                 slotZ = zT,
                 slotHalfWidth = beltHalfWidth,
             };
-            ChamberBuilder.Build(level.transform, layout, ChamberNumber, decorSeed + ChamberNumber * 31);
+            ChamberBuilder.Build(level.transform, layout, InBase ? 0 : ChamberNumber, decorSeed + (InBase ? 0 : ChamberNumber) * 31); // the base is "chamber 00"
             Game.Monitor = WallMonitor.Create(level.transform, ChamberBuilder.MonitorRect, ChamberBuilder.BackWallZ);
             for (int i = 0; i < kinds.Count; i++)
-                Closet.Create(level.transform, kinds[i], new Vector3(closetXs[i], 0f, ChamberBuilder.BackWallZ));
+                Closet.Create(level.transform, kinds[i], new Vector3(closetXs[i], 0f, ChamberBuilder.BackWallZ), kinds[i] == ClosetKind.Locker ? i : -1);
+            lockerXs = closetXs;
+            if (cfg.enableVendingMachine)
+            {
+                // machines against the back wall on the right, facing the room. The base has a whole row: its own items,
+                // then the water as a placeholder, then out-of-order ones. Each chamber has one: the item whose 'chamber'
+                // is this one (water in chamber 1), or an out-of-order machine until that chamber gets an item.
+                var stock = new System.Collections.Generic.List<ItemDef>();
+                if (InBase)
+                {
+                    foreach (var d in Items.All) if (d.chamber == 0) stock.Add(d);   // the base's own items (backpack)
+                    var water = Items.Get(Items.WaterBottle);                         // placeholder until there's more
+                    if (water != null && !stock.Contains(water)) stock.Add(water);
+                }
+                else stock.AddRange(Items.StockFor(ChamberNumber)); // this chamber's special, plus the filter from chamber 4 on
+                int n = InBase ? Mathf.Max(1, cfg.baseVendingMachines) : Mathf.Max(1, stock.Count); // (one out of order if nothing yet)
+                float z = ChamberBuilder.BackWallZ - 0.37f;
+                for (int i = 0; i < n; i++)
+                {
+                    float x = roomR - 1.0f - (n - 1 - i) * BaseMachineSpacing;
+                    var item = i < stock.Count ? stock[i] : null;
+                    VendingMachine.Create(level.transform, new Vector3(x, 0f, z), Quaternion.Euler(0f, 180f, 0f), item, item != null ? 2 : 0, i);
+                }
+            }
             PadAnchor = new Vector3((boardMinX + boardMaxX) * 0.5f, 0f, boardMaxZ + lane * 0.5f);
-            PadSpacing = 3.3f; // teleporter chambers are ~4.6 wide including their tesla coils
+            PadSpacing = 5.0f; // teleporters are ~4.6 wide including their tesla coils (up to three side by side)
 
             // ---------------- board
             var boardGo = new GameObject("Board");
@@ -223,7 +269,7 @@ namespace UnderPressure
             var rig = cam.GetComponent<CameraRig>();
             if (rig == null) rig = cam.gameObject.AddComponent<CameraRig>();
             var frame = new Bounds();
-            frame.SetMinMax(new Vector3(xL - beltHalfWidth - 0.3f, 0f, zB - beltHalfWidth - 0.2f), new Vector3(xR + beltHalfWidth + 0.3f, 1f, closets ? zBack + 0.2f : zT + beltHalfWidth + 0.8f));
+            frame.SetMinMax(new Vector3(xL - beltHalfWidth - 0.3f, 0f, zB - beltHalfWidth - 0.2f), new Vector3(xR + beltHalfWidth + (vending ? 1.2f : 0.3f), 1f, closets ? zBack + 0.2f : zT + beltHalfWidth + 0.8f));
             rig.Init(cam, frame);
             Game.Cam = rig;
             GameSettings.ApplyLight();
@@ -247,7 +293,14 @@ namespace UnderPressure
         }
 
         /// <summary>Where a player's arrival pad comes up (their spot in the left walkway).</summary>
-        public Vector3 SpawnPoint(int index) => new Vector3(playerSpawnX, 0f, playerSpawnZ + (index - 1.5f) * 1.1f);
+        int MachineCount(GameConfig cfg) => InBase ? Mathf.Max(1, cfg.baseVendingMachines) : Mathf.Max(1, Items.StockFor(ChamberNumber).Count);
+
+        public Vector3 SpawnPoint(int index)
+        {
+            // everyone turns up in front of their own locker
+            if (index >= 0 && index < lockerXs.Length) return new Vector3(lockerXs[index], 0f, ChamberBuilder.BackWallZ - 1.0f);
+            return new Vector3(playerSpawnX, 0f, playerSpawnZ + (index - 1.5f) * 1.1f);
+        }
 
         public void SpawnPlayer(JoinManager.Slot slot, bool announce)
         {
@@ -257,7 +310,8 @@ namespace UnderPressure
             var preview = previewGo.AddComponent<PlacementPreview>();
             preview.Build(cfg.tileSize);
 
-            var color = JoinManager.PlayerColors[slot.index % JoinManager.PlayerColors.Length];
+            joins.AssignColor(slot);
+            var color = slot.Color;
             var go = new GameObject("Player" + (slot.index + 1));
             go.transform.SetParent(level.transform, false);
             go.transform.position = SpawnPoint(slot.index);

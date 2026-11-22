@@ -20,6 +20,8 @@ namespace UnderPressure
             public float xLeft, xRight, zBack, zFront; // room walls
             public float slotZ, slotHalfWidth;    // where the belt comes out of the left wall
             public float[] closetXs;              // doorway centres of cosmetic closets set into the back wall
+            public bool hasVending; public float vendingZ; // where the vending machine stands on the right wall
+            public Vector2 backClear;             // x range along the back wall kept free of junk (the base's machine row)
         }
 
         public static void Build(Transform parent, Layout L, int chamberNumber, int seed)
@@ -349,6 +351,8 @@ namespace UnderPressure
                 float z = back ? L.zBack - 0.45f : Mathf.Lerp(L.walk.yMin, L.zBack - 0.6f, (float)rng.NextDouble());
                 float s = 0.12f + (float)rng.NextDouble() * 0.3f;
                 if (back && NearCloset(L, x, 0.4f)) continue; // keep the doorways clear
+                if (back && x > L.backClear.x - 0.3f && x < L.backClear.y) continue; // and the machine row
+                if (!back && L.hasVending && Mathf.Abs(z - L.vendingZ) < 1.0f) continue; // and the vending machine
                 Prims.Make(PrimitiveType.Cube, root, new Vector3(x, s * 0.5f, z), Vector3.one * s, junkMat,
                     Quaternion.Euler((float)rng.NextDouble() * 30f, (float)rng.NextDouble() * 360f, 0), "Junk");
             }

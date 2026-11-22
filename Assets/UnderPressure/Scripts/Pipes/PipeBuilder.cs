@@ -8,7 +8,7 @@ namespace UnderPressure
     {
         public Dir a, b;
         public Vector3[] points;      // local path from opening a to opening b
-        public Renderer[][] segments; // per path segment, the renderers that change colour as it fills
+        public Renderer[][] segments; // per path segment, the renderers that change color as it fills
         public float fill;            // 0..1
         public bool fromA = true;     // which end the liquid entered from
         public bool Full => fill >= 0.999f;
@@ -39,9 +39,13 @@ namespace UnderPressure
         public static float CrossDip(float S) => 0.065f * S;
 
         public static float TopHeight(PipeType t, float S) =>
-            TubeHeight(S) + TubeRadius(S) + (t == PipeType.Cross ? BridgeBump(S) : 0f);
+            TubeHeight(S) + TubeRadius(S) + (t == PipeType.Cross ? BridgeBump(S) : t == PipeType.Filter ? 0.16f * S : 0f);
 
-        struct ChannelDef { public Dir a, b; public float bump; }
+        /// <summary>The filter's canister in the middle of the T (the arms stop at its wall).</summary>
+        public static float CanisterRadius(float S) => 0.17f * S;
+
+        // an 'arm' channel runs from opening a into the middle of the piece (the filter's T)
+        struct ChannelDef { public Dir a, b; public float bump; public bool arm; }
 
         static List<ChannelDef> Defs(PipeType t, float S)
         {
@@ -53,6 +57,10 @@ namespace UnderPressure
                 case PipeType.Cross:
                     list.Add(new ChannelDef { a = Dir.N, b = Dir.S, bump = -CrossDip(S) });   // dips under...
                     list.Add(new ChannelDef { a = Dir.E, b = Dir.W, bump = BridgeBump(S) }); // ...so the bridge can arch gently over
+                    break;
+                case PipeType.Filter:
+                    // a T: three arms into a canister. Liquid fills the arm it came in by, then splits out the other two
+                    foreach (var d in new[] { Dir.N, Dir.E, Dir.W }) list.Add(new ChannelDef { a = d, b = d, arm = true });
                     break;
             }
             return list;
@@ -185,15 +193,16 @@ namespace UnderPressure
             foreach (var def in Defs(type, S))
             {
                 var ch = new PipeChannel { a = def.a, b = def.b };
-                ch.points = Path(def.a, def.b, S, h, def.bump, Segments);
+                ch.points = def.arm ? ArmPath(def.a, S, h, Segments) : Path(def.a, def.b, S, h, def.bump, Segments);
                 ch.segments = new Renderer[Segments][];
                 for (int i = 0; i < Segments; i++)
                 {
                     // the tube starts/ends a little inside each flange, so its open end never shows
-                    Vector3 ta = Tangent(ch.points, i, def.a, def.b), tb = Tangent(ch.points, i + 1, def.a, def.b);
+                    Vector3 ta = def.arm ? -DirUtil.ToVector3(def.a) : Tangent(ch.points, i, def.a, def.b);
+                    Vector3 tb = def.arm ? -DirUtil.ToVector3(def.a) : Tangent(ch.points, i + 1, def.a, def.b);
                     Vector3 a = ch.points[i], b = ch.points[i + 1];
                     if (i == 0) a += ta * 0.03f * S;
-                    if (i == Segments - 1) b -= tb * 0.03f * S;
+                    if (i == Segments - 1 && !def.arm) b -= tb * 0.03f * S;
                     var go = new GameObject("Tube");
                     go.transform.SetParent(m.root, false);
                     go.AddComponent<MeshFilter>().sharedMesh = TubeMesh($"{type}|{ci}|{i}|{S:0.###}", a, b, ta, tb, r);
@@ -225,9 +234,11 @@ namespace UnderPressure
                 m.clamps[d] = clampRoot;
             }
 
+            if (type == PipeType.Filter) FilterCanister(m.root, S, h, r, flange, clamp, overrideMat);
+
             // Ground brackets ("staples") that tie an unconnected piece to its tile.
             var ch0 = m.channels[0];
-            float[] stapleTs = type == PipeType.Corner ? new[] { 0.5f } : type == PipeType.Cross ? new[] { 0.18f, 0.82f } : new[] { 0.3f, 0.7f };
+            float[] stapleTs = type == PipeType.Corner || type == PipeType.Filter ? new[] { 0.5f } : type == PipeType.Cross ? new[] { 0.18f, 0.82f } : new[] { 0.3f, 0.7f };
             foreach (float t in stapleTs)
             {
                 Vector3 p = Eval(ch0.points, t);
@@ -236,6 +247,39 @@ namespace UnderPressure
                 m.staples.Add(MakeStaple(m.root, p, tangent.normalized, r, h, staple));
             }
             return m;
+        }
+
+        /// <summary>A straight run from the middle of edge 'a' in to the canister wall.</summary>
+        static Vector3[] ArmPath(Dir a, float S, float h, int n)
+        {
+            var pts = new Vector3[n + 1];
+            Vector3 pa = DirUtil.ToVector3(a) * S * 0.5f;
+            Vector3 pc = DirUtil.ToVector3(a) * CanisterRadius(S) * 0.6f;
+            for (int i = 0; i <= n; i++)
+            {
+                var p = Vector3.Lerp(pa, pc, i / (float)n);
+                p.y = h;
+                pts[i] = p;
+            }
+            return pts;
+        }
+
+        /// <summary>The filter's canister: a glass cylinder with a striped cartridge inside, metal caps and a handle.</summary>
+        static void FilterCanister(Transform root, float S, float h, float r, Material flange, Material clamp, Material overrideMat)
+        {
+            float cr = CanisterRadius(S), top = h + r + 0.16f * S, bottom = 0.05f;
+            var cap = overrideMat != null ? overrideMat : Mats.Lit(new Color(0.75f, 0.78f, 0.82f), 0.85f, 0.9f);
+            var glass = overrideMat != null ? overrideMat : Mats.Transparent(new Color(0.8f, 0.92f, 1f, 0.3f));
+            var cartridge = overrideMat != null ? overrideMat : Mats.Lit(new Color(0.95f, 0.95f, 0.92f), 0.3f);
+            var pleat = overrideMat != null ? overrideMat : Mats.Lit(new Color(0.3f, 0.6f, 0.95f), 0.4f);
+            float mid = (top + bottom) * 0.5f, len = top - bottom;
+            Prims.Make(PrimitiveType.Cylinder, root, new Vector3(0, mid, 0), new Vector3(cr * 2f, len * 0.5f, cr * 2f), glass, null, "CanisterGlass");
+            Prims.Make(PrimitiveType.Cylinder, root, new Vector3(0, mid, 0), new Vector3(cr * 1.2f, len * 0.42f, cr * 1.2f), cartridge, null, "Cartridge");
+            for (int i = 0; i < 4; i++) // pleat bands
+                Prims.Make(PrimitiveType.Cylinder, root, new Vector3(0, bottom + len * (0.2f + i * 0.2f), 0), new Vector3(cr * 1.25f, 0.012f * S, cr * 1.25f), pleat, null, "Pleat");
+            Prims.Make(PrimitiveType.Cylinder, root, new Vector3(0, top, 0), new Vector3(cr * 2.2f, 0.035f * S, cr * 2.2f), cap, null, "CapTop");
+            Prims.Make(PrimitiveType.Cylinder, root, new Vector3(0, bottom + 0.02f, 0), new Vector3(cr * 2.2f, 0.03f * S, cr * 2.2f), cap, null, "CapBottom");
+            Prims.Make(PrimitiveType.Cube, root, new Vector3(0, top + 0.05f * S, 0), new Vector3(cr * 1.4f, 0.05f * S, 0.05f * S), clamp, null, "Handle");
         }
 
         static Transform MakeStaple(Transform parent, Vector3 p, Vector3 tangent, float r, float h, Material mat)

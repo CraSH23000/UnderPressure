@@ -5,7 +5,7 @@ namespace UnderPressure
 {
     /// <summary>
     /// A little elevator that brings a critter up through the floor: a hatch slides open, a pad rises in a beam
-    /// of the player's colour, the critter materialises on it, then the pad sinks and the hatch shuts.
+    /// of the player's color, the critter materialises on it, then the pad sinks and the hatch shuts.
     /// Used for joining, arriving in a new chamber and coming back after falling in the pit.
     /// </summary>
     public class ArrivalPad : MonoBehaviour
@@ -45,7 +45,7 @@ namespace UnderPressure
             // the hole and its rim
             Prims.Make(PrimitiveType.Cylinder, t0, new Vector3(0, 0.008f, 0), new Vector3(1.15f, 0.004f, 1.15f), dark, null, "Hole");
             Prims.Make(PrimitiveType.Cylinder, t0, new Vector3(0, 0.006f, 0), new Vector3(1.4f, 0.004f, 1.4f), trim, null, "Rim");
-            // the pad itself, with a glowing ring in the player's colour
+            // the pad itself, with a glowing ring in the player's color
             pad = Prims.Empty("Pad", t0, new Vector3(0, PadDown, 0)).transform;
             Prims.Make(PrimitiveType.Cylinder, pad, Vector3.zero, new Vector3(1.05f, PadH * 0.5f, 1.05f), metal, null, "Deck");
             Prims.Make(PrimitiveType.Cylinder, pad, new Vector3(0, PadH * 0.5f + 0.003f, 0), new Vector3(0.9f, 0.004f, 0.9f),

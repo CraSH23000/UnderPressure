@@ -6,10 +6,13 @@ namespace UnderPressure
     /// <summary>Countdown → flow → spill. Money, distance goal, loop multiplier, and the big celebratory moments.</summary>
     public class GameManager : MonoBehaviour
     {
-        public enum State { Countdown, Flowing, Won, Lost }
+        public enum State { Countdown, Flowing, Won, Lost, Lobby }
 
         public State Current { get; private set; } = State.Countdown;
-        public bool IsOver => Current == State.Won || Current == State.Lost;
+        /// <summary>Off the clock: after a round, or at the base (free play, belt idling).</summary>
+        public bool IsOver => Current == State.Won || Current == State.Lost || Current == State.Lobby;
+        /// <summary>At the base: no round at all.</summary>
+        public bool InLobby => Current == State.Lobby;
         public int Money { get; private set; }
         public int Distance { get; private set; }
         public int Loops { get; private set; }
@@ -65,6 +68,7 @@ namespace UnderPressure
 
             hud.SetMoney(0);
             hud.SetDistance(0, cfg.goalDistance);
+            if (Game.Bootstrap != null && Game.Bootstrap.InBase) { Current = State.Lobby; intermission = true; }
         }
 
         void OnDestroy()
@@ -98,7 +102,7 @@ namespace UnderPressure
         public void OnCritterLost(Vector3 pitPos)
         {
             int cost = cfg.pitRespawnCost;
-            if (cost <= 0) return;
+            if (cost <= 0 || (InLobby && cfg.freePitInBase)) return; // falling in at the base is free
             if (IsOver) Game.Bootstrap.Bank -= cost;
             else { Money -= cost; hud.PunchMoney(0.8f); }
             Popup.Spawn(pitPos + Vector3.up * 1.0f, $"-${cost}", Mats.Danger, 44, 1.2f, 110f);
@@ -172,6 +176,9 @@ namespace UnderPressure
                         holo.Set("FLOWING", $"flow x{flow.SpeedMultiplier:0.##}" + (cfg.moneyScalesWithFlowSpeed ? $"  ·  ${PieceValue()}/pipe" : ""),
                             Distance, cfg.goalDistance, false);
                     UpdateLiveMonitor();
+                    break;
+                case State.Lobby:
+                    UpdateLobby();
                     break;
                 default:
                     if (intermission) UpdateTeleporters();
@@ -264,9 +271,18 @@ namespace UnderPressure
         {
             Distance++;
             Progress.OnPieceFilled(p);
-            int value = PieceValue();
-            Money += value;
+            // the Count Ant, and filtered streams (purer water / stronger concentrate) are worth more
+            int value = Mathf.RoundToInt(PieceValue() * Items.MoneyMultiplier * flow.LastGrade.ValueMultiplier);
             Vector3 top = p.transform.position + Vector3.up * (p.TopHeight + 0.3f);
+            // lucky break: this pipe pays double
+            if (Items.Roll(cfg.bonusPipeChance, out bool lucky))
+            {
+                value *= 2;
+                Popup.Spawn(top + Vector3.up * 0.5f, "BONUS x2", new Color(1f, 0.85f, 0.25f), 34, 1f);
+                Sfx.Play(Sfx.I != null ? Sfx.I.coin : null, 0.7f, 1.3f);
+                if (lucky) Juice.Delay(0.15f, () => Items.ShowLucky(top + Vector3.up * 1.0f));
+            }
+            Money += value;
             Popup.Spawn(top, $"+${value}", Mats.Money, 36, 0.8f);
             Sfx.Play(Sfx.I != null ? Sfx.I.bloop : null, 0.7f, 1f + Mathf.Min(Distance, 24) * 0.035f, 0.01f);
             p.Spring.Squash(0.3f);
@@ -343,7 +359,7 @@ namespace UnderPressure
         {
             Loops++;
             int count = nested + 1;
-            int amount = cfg.loopBonus * count * (nested > 0 ? Mathf.Max(1, cfg.nestedLoopMultiplier) : 1);
+            int amount = Mathf.RoundToInt(cfg.loopBonus * count * (nested > 0 ? Mathf.Max(1, cfg.nestedLoopMultiplier) : 1) * Items.MoneyMultiplier);
             Money += amount;
             Vector3 c = p.transform.position + Vector3.up * (p.TopHeight + 0.2f);
             int heat = Mathf.Min(count, 6); // how big the celebration gets
@@ -371,6 +387,7 @@ namespace UnderPressure
             Current = Distance >= cfg.goalDistance ? State.Won : State.Lost;
             Game.Conveyor?.ResetSpeed(); // off the clock: idle speed, lever back to default (still usable)
             Progress.OnSpill(pos, dir);
+            FunnelCatch(pos, dir);
             board.Spout.Hologram.Set(Current == State.Won ? "PASSED" : "SPILLED", "", Distance, cfg.goalDistance, Current != State.Won);
             Juice.SlowMo(0.25f, 0.9f);
             Juice.Shake(0.55f);
@@ -383,6 +400,89 @@ namespace UnderPressure
             SlimePuddle.Spawn(new Vector3(pos.x + dir.x * 0.7f, 0f, pos.z + dir.z * 0.7f), dir);
 
             Juice.Delay(0.6f, BeginIntermission);
+        }
+
+        /// <summary>The funnel: anyone with a bottle standing in the leak catches some. Water refills it; anything else
+        /// contaminates it (side effects when they drink).</summary>
+        void FunnelCatch(Vector3 pos, Vector3 dir)
+        {
+            if (!Items.TeamOwns(Items.Funnel) || !Items.TeamOwns(Items.WaterBottle)) return;
+            var grade = flow.SpillGrade;       // whichever stream leaked (filters can change it)
+            bool water = grade.water && grade.level == 0;
+            string name = grade.Name;
+            foreach (var pl in Game.Players)
+            {
+                if (pl == null || !Progress.InSpray(pl, pos, dir)) continue;
+                int slot = pl.Index;
+                Items.SetCharges(slot, Items.WaterBottle, Items.MaxCharges(Items.WaterBottle));
+                Items.SetBottleMix(slot, water ? "" : name);
+                Vector3 at = pl.transform.position + Vector3.up * 2.1f;
+                if (water) Popup.Spawn(at, "CAUGHT IT!  BOTTLE REFILLED", new Color(0.5f, 0.85f, 1f), 34, 1.6f);
+                else Popup.Spawn(at, $"CAUGHT IT!  ...{name}?", grade.Color, 34, 1.8f);
+                Fx.Burst(pl.transform.position + Vector3.up * 1.2f, Mats.Liquid, Color.white, 20, 2.5f, 0.1f, 0.6f, 1f, true);
+                Sfx.Play(Sfx.I != null ? Sfx.I.bloop : null, 0.8f, 0.8f);
+                if (!grade.water) pl.GetSprayed(dir); // you still get soaked in it
+            }
+        }
+
+        // =================================================================== base
+
+        bool lobbyCam;
+        float baseMonitorT;
+
+        void UpdateLobby()
+        {
+            board.Spout.Pressure = 0f;
+            if (Game.Players.Count == 0)
+            {
+                float pulse = 0.75f + 0.25f * Mathf.Sin(Time.unscaledTime * 4f);
+                hud.SetTimer("PRESS (A) / SPACE / ENTER", $"to join · up to {JoinManager.MaxPlayers} players", new Color(1f, 1f, 1f, pulse));
+                board.Spout.Hologram.Set("PRACTICE", "no clock at the base", 0, cfg.goalDistance, false);
+                UpdateBaseMonitor();
+                return;
+            }
+            if (!lobbyCam && Game.Cam != null && Game.Monitor != null) { lobbyCam = true; Game.Cam.BeginFollow(Game.Monitor.Center); }
+            if (pads.Count == 0) CreateBasePads();
+            board.Spout.Hologram.Set("PRACTICE", "no clock at the base", 0, cfg.goalDistance, false);
+            UpdateBaseMonitor();
+            UpdateTeleporters();
+        }
+
+        /// <summary>The way out: chamber 01, plus "continue" to the deepest chamber you've reached.</summary>
+        void CreateBasePads()
+        {
+            var bs = Game.Bootstrap;
+            int furthest = Progress.Furthest;
+            if (furthest <= 1)
+                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor, ReadyPad.Kind.Chamber, "START:  CHAMBER 01", 0.2f, 1));
+            else
+            {
+                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor - Vector3.right * bs.PadSpacing * 0.5f, ReadyPad.Kind.Chamber, "FROM THE TOP:  CHAMBER 01", 0.2f, 1));
+                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor + Vector3.right * bs.PadSpacing * 0.5f, ReadyPad.Kind.Chamber, $"CONTINUE:  CHAMBER {furthest:00}", 0.5f, furthest));
+            }
+            Sfx.Play(Sfx.I != null ? Sfx.I.whoosh : null, 0.6f, 1.3f, 0f);
+        }
+
+        void UpdateBaseMonitor()
+        {
+            if (Game.Monitor == null) return;
+            baseMonitorT -= Time.unscaledDeltaTime;
+            if (baseMonitorT > 0f) return;
+            baseMonitorT = 0.5f;
+            int furthest = Progress.Furthest;
+            bool bottles = Items.TeamOwns(Items.WaterBottle);
+            string left =
+                $"DEEPEST CHAMBER  {furthest:00}\n" +
+                $"LAB FUNDING  <color=#FD4>${Game.Bootstrap.Bank:N0}</color>\n" +
+                $"WATER BOTTLES  {(bottles ? "<color=#9EF>ISSUED</color>" : $"${cfg.waterBottlePrice:N0}")}";
+            string right =
+                $"SUBJECTS  {Game.Players.Count}/{JoinManager.MaxPlayers}\n" +
+                "CLOCK  <color=#9EF>OFF</color>\n" +
+                $"MEDIUM  <color=#{ColorUtility.ToHtmlStringRGB(Mats.Liquid)}>{Mats.LiquidName}</color>";
+            string footer = Game.Players.Count < JoinManager.MaxPlayers
+                ? "your locker is at the back  ·  new subjects: press (A) / Space / Enter"
+                : "your locker is at the back  ·  stand on a teleporter together to start";
+            Game.Monitor.SetLive("LAB BASE", left, right, footer);
         }
 
         // =================================================================== intermission
@@ -398,6 +498,7 @@ namespace UnderPressure
             bool won = Current == State.Won;
             string bonusLine = won ? ApplySpeedBonuses() : null;
             if (won) Game.Bootstrap.Bank += Money;
+            if (won) Progress.ReachedChamber(Game.Bootstrap.ChamberNumber + 1); // passing a chamber unlocks the next one (CONTINUE at the base)
 
             Banner.Show(won ? "PLUMBING COMPLETE!" : "SPILLED!", won ? Mats.Money : Mats.Danger, 120, 2.2f, 120f);
             if (won)
@@ -418,12 +519,18 @@ namespace UnderPressure
             if (Game.Monitor != null) Game.Cam?.BeginFollow(Game.Monitor.Center);
 
             var bs = Game.Bootstrap;
+            // retry on the left, the base in the middle, the next chamber on the right (if you passed)
             if (won)
             {
                 pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor - Vector3.right * bs.PadSpacing, ReadyPad.Kind.Retry, $"RETRY  CHAMBER {bs.ChamberNumber:00}"));
-                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor + Vector3.right * bs.PadSpacing, ReadyPad.Kind.Next, $"NEXT:  CHAMBER {bs.ChamberNumber + 1:00}"));
+                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor, ReadyPad.Kind.Base, "BACK TO BASE", 0.2f));
+                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor + Vector3.right * bs.PadSpacing, ReadyPad.Kind.Next, $"NEXT:  CHAMBER {bs.ChamberNumber + 1:00}", 0.4f));
             }
-            else pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor, ReadyPad.Kind.Retry, $"RETRY  CHAMBER {bs.ChamberNumber:00}"));
+            else
+            {
+                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor - Vector3.right * bs.PadSpacing * 0.5f, ReadyPad.Kind.Retry, $"RETRY  CHAMBER {bs.ChamberNumber:00}"));
+                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor + Vector3.right * bs.PadSpacing * 0.5f, ReadyPad.Kind.Base, "BACK TO BASE", 0.2f));
+            }
             Sfx.Play(Sfx.I != null ? Sfx.I.whoosh : null, 0.6f, 1.3f, 0f);
             intermission = true;
         }
@@ -442,7 +549,7 @@ namespace UnderPressure
             }
 
             bool allReady = total > 0 && ready == total;
-            string title = Current == State.Won ? "CHAMBER PASSED" : "TEST FAILED";
+            string title = InLobby ? "LAB BASE" : Current == State.Won ? "CHAMBER PASSED" : "TEST FAILED";
 
             // charge up while everyone's on a teleporter; it bleeds off fast if anyone steps away
             float dt = Time.unscaledDeltaTime;
@@ -457,15 +564,17 @@ namespace UnderPressure
 
             if (!allReady && charge <= 0f)
             {
-                hud.SetTimer(title, $"Everyone stand on a teleporter  ·  ready {ready}/{total}", Current == State.Won ? Mats.Liquid : Mats.Danger);
-                if (Time.unscaledTime - endTime > 2.5f) Game.Monitor?.ShowFooter($"OFF THE CLOCK   ·   LAB FUNDING  ${Game.Bootstrap.Bank:N0}   ·   ready {ready}/{total}");
+                hud.SetTimer(title, $"Everyone stand on a teleporter  ·  ready {ready}/{total}", InLobby ? new Color(0.75f, 0.88f, 1f) : Current == State.Won ? Mats.Liquid : Mats.Danger);
+                if (!InLobby && Time.unscaledTime - endTime > 2.5f) Game.Monitor?.ShowFooter($"OFF THE CLOCK   ·   LAB FUNDING  ${Game.Bootstrap.Bank:N0}   ·   ready {ready}/{total}");
                 return;
             }
 
-            string odds = pads.Count > 1 ? $"next {pads[1].Occupants} : retry {pads[0].Occupants}" : "retry";
+            var oddsParts = new System.Collections.Generic.List<string>();
+            foreach (var p in pads) oddsParts.Add($"{p.ShortName} {p.Occupants}");
+            string odds = string.Join(" : ", oddsParts);
             int amps = Mathf.RoundToInt(charge * 9000f);
             hud.SetTimer(allReady ? $"CHARGING  {charge * 100f:0}%" : "DISCHARGING...", $"{amps:N0} AMPS  ·  {odds}", Color.Lerp(Color.white, new Color(0.6f, 0.8f, 1f), charge));
-            Game.Monitor?.ShowFooter($"CAPACITOR {charge * 100f:0}%   ·   {amps:N0} A   ·   {odds}");
+            if (!InLobby) Game.Monitor?.ShowFooter($"CAPACITOR {charge * 100f:0}%   ·   {amps:N0} A   ·   {odds}");
             if (allReady) Juice.Shake(charge * charge * 0.02f);
             if (charge >= 1f) StartCoroutine(Teleport());
         }
@@ -477,22 +586,27 @@ namespace UnderPressure
             var choices = new System.Collections.Generic.List<ReadyPad>();
             foreach (var p in pads) for (int i = 0; i < p.Occupants; i++) choices.Add(p);
             var chosen = choices[Random.Range(0, choices.Count)];
-            bool next = chosen.Destination == ReadyPad.Kind.Next;
 
-            // roulette between the occupied pads: the current jumps back and forth
-            if (pads.Count > 1 && pads[0].Occupants > 0 && pads[1].Occupants > 0)
+            // roulette between the occupied pads: the current jumps between them before settling
+            var occupied = new System.Collections.Generic.List<ReadyPad>();
+            foreach (var p in pads) if (p.Occupants > 0) occupied.Add(p);
+            if (occupied.Count > 1)
             {
-                int flips = 7 + (chosen == pads[1] ? 1 : 0);
+                int flips = 7 + occupied.Count;
+                int at = 0;
                 for (int i = 0; i < flips; i++)
                 {
-                    var p = pads[i % 2];
+                    at = i % occupied.Count;
+                    // land on the chosen one
+                    if (i == flips - 1) at = occupied.IndexOf(chosen);
+                    var p = occupied[at];
                     p.Flash();
-                    hud.SetTimer(p.Destination == ReadyPad.Kind.Next ? "NEXT CHAMBER?" : "RETRY?", "", Color.white);
+                    hud.SetTimer(p.Question, "", Color.white);
                     yield return new WaitForSecondsRealtime(0.09f + i * 0.035f);
                 }
             }
             chosen.Flash();
-            hud.SetTimer(next ? "NEXT CHAMBER" : "RETRY", "", next ? Mats.Liquid : Theme.AccentOrange);
+            hud.SetTimer(chosen.Answer, "", chosen.Color);
             yield return new WaitForSecondsRealtime(0.35f);
 
             // STRIKE. Every occupied teleporter fires; destination is the vote winner.
@@ -510,8 +624,13 @@ namespace UnderPressure
             // a couple of seconds of silence while the smoke clears
             yield return new WaitForSecondsRealtime(2.2f);
             Game.Bootstrap.ArrivingByTeleport = true;
-            if (next) Game.Bootstrap.NextChamber();
-            else Game.Bootstrap.Restart();
+            switch (chosen.Destination)
+            {
+                case ReadyPad.Kind.Next: Game.Bootstrap.NextChamber(); break;
+                case ReadyPad.Kind.Base: Game.Bootstrap.GoToBase(); break;
+                case ReadyPad.Kind.Chamber: Game.Bootstrap.GoToChamber(chosen.TargetChamber); break;
+                default: Game.Bootstrap.Restart(); break;
+            }
         }
 
         /// <summary>Fun per-player notes for the scoreboard, Overcooked-style.</summary>

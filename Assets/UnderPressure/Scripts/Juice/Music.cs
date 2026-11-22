@@ -147,6 +147,12 @@ namespace UnderPressure
                         targetLead = anyone ? Mathf.Clamp01(1f - gm.CountdownRemaining / 8f) * 0.5f : 0f;
                         overTime = -1f;
                         break;
+                    case GameManager.State.Lobby:
+                        // the base: just the groove, no melody, no tape stop
+                        targetBase = anyone ? 1f : 0.55f;
+                        targetLead = 0f;
+                        overTime = -1f;
+                        break;
                     case GameManager.State.Flowing:
                         targetBase = panic ? 0f : 1f;
                         targetLead = panic ? 0f : 1f;

@@ -4,7 +4,7 @@ using UnityEngine.Rendering;
 
 namespace UnderPressure
 {
-    /// <summary>Runtime URP material factory + the game's colour palette.</summary>
+    /// <summary>Runtime URP material factory + the game's color palette.</summary>
     public static class Mats
     {
         // ---- Pipe palette: written by Theme.Apply() so it can get grimier level by level ----
@@ -20,7 +20,7 @@ namespace UnderPressure
 
         /// <summary>
         /// How much of the liquid's glow shows on its surface (pipe fill, puddle). Dark liquids like VOID keep their
-        /// colour (black) with just a faint sheen; the glow still shows on the liquid front, splashes and particles.
+        /// color (black) with just a faint sheen; the glow still shows on the liquid front, splashes and particles.
         /// </summary>
         public static float FillGlowScale
         {
@@ -47,11 +47,20 @@ namespace UnderPressure
             circle = null;
             ring = null;
             lit = Shader.Find("Universal Render Pipeline/Lit");
+            // in a player build the shaders come in through the keep-alive materials (see Editor/UnderPressureBuild)
+            if (lit == null) lit = KeptShader("LitEmission");
             if (lit == null) lit = Shader.Find("Universal Render Pipeline/Simple Lit");
             if (lit == null) lit = Shader.Find("Standard");
             particle = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            if (particle == null) particle = KeptShader("ParticlesUnlit");
             if (particle == null) particle = Shader.Find("Particles/Standard Unlit");
             if (lit == null) Debug.LogError("[UnderPressure] Could not find a URP Lit shader. Is the project using URP?");
+        }
+
+        static Shader KeptShader(string name)
+        {
+            var m = Resources.Load<Material>("UnderPressureShaderKeep/" + name);
+            return m != null ? m.shader : null;
         }
 
         public static Material Lit(Color c, float smoothness = 0.45f, float metallic = 0f, Color? emission = null)
@@ -73,9 +82,24 @@ namespace UnderPressure
             return m;
         }
 
-        /// <summary>A unique (uncached) transparent material — e.g. the placement ghost, whose colour changes.</summary>
+        public static void SetEmission(Material m, Color c)
+        {
+            if (m != null && m.HasProperty("_EmissionColor")) m.SetColor("_EmissionColor", c);
+        }
+
+        /// <summary>A unique (uncached) transparent material — e.g. the placement ghost, whose color changes.</summary>
         public static Material Transparent(Color c)
         {
+            // Copy the saved transparent material when there is one: its keywords are exactly the variant that
+            // gets included in a player build (one built from scratch here can miss it and render solid).
+            var kept = Resources.Load<Material>("UnderPressureShaderKeep/LitTransparent");
+            if (kept != null)
+            {
+                var k = new Material(kept) { name = "UP_Transparent" };
+                SetBase(k, c);
+                k.SetColor("_EmissionColor", c * 0.4f);
+                return k;
+            }
             var m = new Material(lit) { name = "UP_Transparent" };
             SetBase(m, c);
             m.SetFloat("_Surface", 1f);
@@ -101,6 +125,26 @@ namespace UnderPressure
 
         /// <summary>Pipe segment materials from empty (0) to full of liquid (FillLevels-1). Swapping shared
         /// materials instead of property blocks keeps the SRP batcher happy.</summary>
+        static readonly Dictionary<string, Material[]> tintedFills = new Dictionary<string, Material[]>();
+
+        /// <summary>Fill materials for a stream of a given color (filtered or concentrated liquid).</summary>
+        public static Material FillMatFor(Color liquid, Color glow, int level)
+        {
+            string key = $"{liquid}{glow}";
+            if (!tintedFills.TryGetValue(key, out var mats) || mats == null || mats[0] == null)
+            {
+                mats = new Material[FillLevels];
+                for (int i = 0; i < FillLevels; i++)
+                {
+                    float t = i / (float)(FillLevels - 1);
+                    var c = Color.Lerp(PipeBody, liquid, Mathf.SmoothStep(0, 1, t));
+                    mats[i] = Lit(c, 0.85f, 0f, Color.Lerp(Color.black, glow * 0.4f * FillGlowScale, t));
+                }
+                tintedFills[key] = mats;
+            }
+            return mats[Mathf.Clamp(level, 0, FillLevels - 1)];
+        }
+
         public static Material FillMat(int level)
         {
             if (fillMats == null)
@@ -116,10 +160,11 @@ namespace UnderPressure
             return fillMats[Mathf.Clamp(level, 0, FillLevels - 1)];
         }
 
-        /// <summary>Unlit (HDR) colour, e.g. for lightning and electric arcs. Not cached: callers may animate it.</summary>
+        /// <summary>Unlit (HDR) color, e.g. for lightning and electric arcs. Not cached: callers may animate it.</summary>
         public static Material Unlit(Color c)
         {
             var sh = Shader.Find("Universal Render Pipeline/Unlit");
+            if (sh == null) sh = KeptShader("Unlit");
             if (sh == null) sh = Shader.Find("Unlit/Color");
             var m = new Material(sh) { name = "UP_Unlit" };
             SetBase(m, c);

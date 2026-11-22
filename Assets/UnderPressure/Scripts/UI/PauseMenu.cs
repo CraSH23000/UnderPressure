@@ -203,7 +203,9 @@ namespace UnderPressure
                 new[] { "Unscrew / swap", "hold E", "hold Enter" },
                 new[] { "Rotate counter-clockwise", "F", ";" },
                 new[] { "Rotate clockwise", "G", "'" },
-                new[] { "Sprint", "Left Shift", "Right Shift" },
+                new[] { "Dash", "Left Shift", "Right Shift" },
+                new[] { "Inventory", "Tab", "Backspace" },
+                new[] { "Item buttons 1 · 2 · 3", "1 · 2 · 3", "End · PgDn · PgUp" },
                 new[] { "Join the game", "Space or E", "Enter" },
                 new[] { "Menu", "Esc", "Esc" },
             }, cols);
@@ -216,7 +218,9 @@ namespace UnderPressure
                 new[] { "Unscrew / swap", "hold X", "" },
                 new[] { "Rotate counter-clockwise", "Y", "" },
                 new[] { "Rotate clockwise", "B", "" },
-                new[] { "Sprint", "Left Trigger", "" },
+                new[] { "Dash", "Left Trigger", "" },
+                new[] { "Inventory", "Select (View)", "" },
+                new[] { "Item buttons 1 · 2 · 3", "RT · LB · RB", "" },
                 new[] { "Join the game", "A", "" },
                 new[] { "Menu", "Start", "" },
             }, cols);

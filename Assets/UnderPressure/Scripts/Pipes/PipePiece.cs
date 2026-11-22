@@ -157,8 +157,13 @@ namespace UnderPressure
 
         // ------------------------------------------------------------------ liquid
 
-        public void SetChannelFill(int index, float fill, bool fromA)
+        public void SetChannelFill(int index, float fill, bool fromA) => SetChannelFill(index, fill, fromA, null);
+
+        /// <summary>Fill a channel; 'grade' tints it for filtered / concentrated streams (null = the chamber's liquid).</summary>
+        public void SetChannelFill(int index, float fill, bool fromA, LiquidGrade? grade)
         {
+            bool tinted = grade.HasValue && !(grade.Value.Plain && grade.Value.water == Progress.LiquidIsWater);
+            Color gc = tinted ? grade.Value.Color : default, gg = tinted ? grade.Value.Glow : default;
             var ch = Model.channels[index];
             ch.fill = Mathf.Clamp01(fill);
             ch.fromA = fromA;
@@ -167,7 +172,8 @@ namespace UnderPressure
             {
                 int pos = fromA ? j : n - 1 - j;
                 float f = Mathf.Clamp01(ch.fill * n - pos);
-                var mat = Mats.FillMat(Mathf.RoundToInt(f * (Mats.FillLevels - 1)));
+                int lvl = Mathf.RoundToInt(f * (Mats.FillLevels - 1));
+                var mat = tinted ? Mats.FillMatFor(gc, gg, lvl) : Mats.FillMat(lvl);
                 foreach (var r in ch.segments[j])
                     if (r.sharedMaterial != mat) r.sharedMaterial = mat;
             }

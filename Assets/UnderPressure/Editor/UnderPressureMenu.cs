@@ -26,11 +26,11 @@ namespace UnderPressure.EditorTools
             EditorSceneManager.SaveScene(scene, ScenePath);
 
             var list = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+            // drop entries for scenes that no longer exist (e.g. the old PipeDream path after the rename)
+            list.RemoveAll(s => string.IsNullOrEmpty(s.path) || !File.Exists(s.path));
             if (!list.Exists(s => s.path == ScenePath))
-            {
                 list.Insert(0, new EditorBuildSettingsScene(ScenePath, true));
-                EditorBuildSettings.scenes = list.ToArray();
-            }
+            EditorBuildSettings.scenes = list.ToArray();
             Debug.Log("[UnderPressure] Scene created at " + ScenePath + ". Press Play!");
         }
 

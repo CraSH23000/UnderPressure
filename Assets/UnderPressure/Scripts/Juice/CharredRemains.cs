@@ -5,7 +5,7 @@ namespace UnderPressure
 {
     /// <summary>
     /// The teleporter's leftovers, in three beats:
-    ///   1. ELECTROCUTED (~0.55 s): classic cartoon x-ray. The critter's silhouette strobes between its own colour
+    ///   1. ELECTROCUTED (~0.55 s): classic cartoon x-ray. The critter's silhouette strobes between its own color
     ///      and a dark x-ray blue, with a glowing white skeleton inside, jittering, sparks flying.
     ///   2. CHARRED (~0.4 s): the bones go black, a puff of smoke, it just... stands there.
     ///   3. DUST (~1.2 s): it crumbles and blows away on the wind.

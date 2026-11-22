@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace UnderPressure
 {
-    public enum PipeType { Straight, Corner, Cross }
+    public enum PipeType { Straight, Corner, Cross, Filter }
 
     /// <summary>What's flowing through the pipes. Chosen per chamber: the last entry whose fromChamber has been reached.</summary>
     [System.Serializable]
@@ -84,7 +84,14 @@ namespace UnderPressure
         public float walkSpeed = 5.2f;
         public float acceleration = 45f;
         public float turnSpeedDegrees = 1080f;
+        [Tooltip("Not used right now: the sprint button is a dash (below). Kept for a future sprint item.")]
         public float sprintMultiplier = 1.5f;
+        [Tooltip("How far one dash carries you, in metres.")]
+        public float dashDistance = 2.2f;
+        [Tooltip("How fast you move during a dash (metres per second). Distance / speed = how long the dash lasts.")]
+        public float dashSpeed = 15f;
+        [Tooltip("Seconds before you can dash again.")]
+        public float dashCooldown = 0.35f;
         public float jumpHeight = 0.7f;
         public float jumpSeconds = 0.45f;
         [Tooltip("Speed multiplier while crawling on top of placed pipes.")]
@@ -107,11 +114,69 @@ namespace UnderPressure
         [Tooltip("After a steal, the piece can't be stolen back for this long.")]
         public float stealCooldown = 0.75f;
 
+        [Header("Items & vending machine")]
+        [Tooltip("The water bottle vending machine, against the back wall on the right (in the base and every chamber).")]
+        public bool enableVendingMachine = true;
+        [Tooltip("Price of water bottles, paid once from the shared bank (everyone gets one).")]
+        public int waterBottlePrice = 750;
+        [Tooltip("Sips in each bottle.")]
+        public int waterBottleCharges = 10;
+        [Tooltip("Seconds one sip lasts.")]
+        public float waterBottleBuffSeconds = 45f;
+        [Tooltip("Walking speed while the sip lasts (1 = normal).")]
+        public float waterBottleSpeedMultiplier = 1.2f;
+        [Tooltip("Dashes in a row while the sip lasts (normally 1).")]
+        public int waterBottleDashes = 2;
+        [Tooltip("Price of the first backpack (at the base). Each upgrade costs backpackPriceGrowth times the one before.")]
+        public int backpackPrice = 500;
+        [Tooltip("Each backpack upgrade costs this many times the previous one.")]
+        public float backpackPriceGrowth = 5f;
+        [Tooltip("Backpack upgrades available (the first purchase counts as 1).")]
+        public int backpackMaxLevel = 10;
+        [Tooltip("Spare pieces each backpack level holds.")]
+        public int backpackPiecesPerLevel = 1;
+        [Tooltip("A Count Ant (base): price, and how much more money everything pays (0.1 = +10%).")]
+        public int countAntPrice = 1500;
+        public float countAntBonus = 0.1f;
+        [Tooltip("Lucky Pirate's Foot (base): price, and extra luck (0.5 = every lucky chance is 1.5x as likely).")]
+        public int pirateFootPrice = 2000;
+        public float pirateFootLuck = 0.5f;
+        [Range(0f, 1f)] [Tooltip("Lucky break: chance a filled pipe pays double (BONUS!). Luck raises it.")]
+        public float bonusPipeChance = 0.05f;
+        [Tooltip("Funnel (chamber 2, needs the water bottle): price.")]
+        public int funnelPrice = 2500;
+        [Tooltip("Crossing Sign (chamber 3): price, and how many more crosses come down the belt (0.25 = +25%). Luck raises it.")]
+        public int crossingSignPrice = 3000;
+        public float crossingSignBoost = 0.25f;
+        [Tooltip("Filter piece: price of one (it goes straight into the buyer's hands), and the chamber its machine first appears in (then every chamber after).")]
+        public int filterPrice = 400;
+        public int filterFromChamber = 4;
+        [Tooltip("Each filter grade (purer water / more concentrated slime) makes a filled pipe pay this much more (0.5 = +50% per grade).")]
+        public float filterGradeBonus = 0.5f;
+        [Tooltip("Inventory panel width, in HUD units (the HUD is 1920 wide at 1080p).")]
+        public float inventoryWidth = 860f;
+        [Tooltip("Height of each item row in the inventory.")]
+        public float inventoryRowHeight = 84f;
+        [Range(0.6f, 2f)] [Tooltip("Scales all inventory text (1 = title 42, rows 34, details 32).")]
+        public float inventoryTextScale = 1.1f;
+        [Tooltip("Space between the inventory's edge and its contents.")]
+        public float inventoryPadding = 28f;
+        [Range(0.2f, 1f)] [Tooltip("Inventory background opacity (lower = more see-through).")]
+        public float inventoryOpacity = 0.74f;
+
         [Header("Pit")]
         [Tooltip("What it costs (from the bank) to reprint a critter that fell into the belt's exit pit.")]
         public int pitRespawnCost = 50;
         [Tooltip("Seconds before a critter that fell in the pit comes back up on an arrival pad.")]
         public float pitRespawnDelay = 1.6f;
+
+        [Header("Base")]
+        [Tooltip("Start the game in the base (lockers, vending machine, practice board, no clock) instead of straight in a chamber.")]
+        public bool startInBase = true;
+        [Tooltip("Falling in the pit at the base is free.")]
+        public bool freePitInBase = true;
+        [Tooltip("Vending machines in a row on the base's back wall: the first sells water bottles, the rest are OUT OF ORDER until there's something to put in them.")]
+        public int baseVendingMachines = 4;
 
         [Header("Chambers & liquids")]
         [Tooltip("Grime added each time you teleport to the next chamber (the lab slowly falls apart).")]
@@ -140,14 +205,10 @@ namespace UnderPressure
         [Range(0.3f, 3f)] [Tooltip("Follow-cam zoom between rounds. Higher = closer.")]
         public float intermissionCameraZoom = 1f;
 
-        [Header("Cosmetic closets")]
-        [Tooltip("Bio-Reactor: swap your critter's species.")]
-        public bool enableBioReactor = true;
-        [Tooltip("Spray Booth: repaint your critter (the floor ring keeps your player colour).")]
-        public bool enableSprayBooth = true;
-        [Tooltip("Wardrobe: hats, torsos and shoes.")]
-        public bool enableWardrobe = true;
-        [Tooltip("How far the closet strip behind the top belt is (metres from the belt's outer edge to the back wall).")]
+        [Header("Lockers")]
+        [Tooltip("One locker per player on the far left of the back wall, in the base and every chamber: player color, species, size, body color and clothes in one. Players appear in front of their own.")]
+        public bool enableLockers = true;
+        [Tooltip("How far the locker strip behind the top belt is (metres from the belt's outer edge to the back wall).")]
         public float closetStripDepth = 1.7f;
 
         [Header("Unlocks")]
@@ -161,8 +222,10 @@ namespace UnderPressure
         public int unlockSharcCleanPipes = 1000;
         [Tooltip("How far (metres) the leaking stream reaches when deciding who got sprayed.")]
         public float sprayReach = 2.2f;
-        [Tooltip("Testing: everything in the closets is available.")]
+        [Tooltip("Testing: everything in the lockers is available.")]
         public bool unlockAllCosmetics = false;
+        [Tooltip("Testing: the team owns every shop item (at least level 1) without buying. Untick for real play.")]
+        public bool testOwnAllItems = false;
         [Tooltip("Testing: wipe all stats and unlocks every time you press Play. Untick to keep progress.")]
         public bool resetUnlocksOnPlay = false;
 

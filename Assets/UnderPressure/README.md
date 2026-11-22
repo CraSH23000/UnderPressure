@@ -15,7 +15,7 @@ Optional: **Under Pressure → Create Config Asset** creates a `GameConfig` asse
 
 The config is grouped by what it changes: Board, Round & flow, Money & bonuses, Conveyor belt, Player movement, Interaction, Pit, Chambers & liquids, Camera, Cosmetic closets, Unlocks, Music, Feel & sound.
 
-> **Player builds:** shaders are looked up by name at runtime. Before building, add `Universal Render Pipeline/Lit` and `Universal Render Pipeline/Particles/Unlit` to *Project Settings → Graphics → Always Included Shaders*. This isn't needed in the editor.
+> **Player builds:** materials are made in code, so before every build the editor script `UnderPressureBuild` saves a few keep-alive materials in `Assets/UnderPressure/Resources/UnderPressureShaderKeep`. These pull the URP Lit, Unlit and Particles shaders, and the variants the game uses, into the build. Without them a build shows only an empty sky. You can also run it by hand: **Under Pressure → Prepare Shaders For Build**. The exe's name comes from *Project Settings → Player → Product Name*.
 >
 > **Layers:** the game uses user layers **8, 9, 10, 11 and 12** by index (placed pipes, climbing player, loose pieces, walk-over crosses and pit guard, player). Naming them in *Tags & Layers* is optional.
 
@@ -30,7 +30,7 @@ Nobody is in the level until someone joins, and the countdown waits until the fi
 | **Jump** (vaults one pipe, climbs onto a run of pipes) | A | Space | Right Ctrl (Numpad 0) |
 | **Use**: grab · place · steal · **hold** to unscrew/swap | X | E | Enter (Numpad Enter) |
 | Rotate counter-clockwise / clockwise | Y / B | F / G | `;` / `'` (Numpad 1 / 2) |
-| Sprint | Left Trigger | Left Shift | Right Shift (Numpad .) |
+| Dash | Left Trigger | Left Shift | Right Shift (Numpad .) |
 | Pause (R / Select restarts from the pause screen) | Start | Esc | Esc |
 | Play again (end screen) | A / X / Start | Space / E | Enter |
 
@@ -52,14 +52,14 @@ Two people can share one keyboard, so you can test co-op with a single controlle
 
 ## Liquid progression
 
-What flows through the pipes gets worse the deeper you go. `liquids` in the config is a list of name, `fromChamber`, colour and HDR glow, and each chamber uses the last entry it has reached:
+What flows through the pipes gets worse the deeper you go. `liquids` in the config is a list of name, `fromChamber`, color and HDR glow, and each chamber uses the last entry it has reached:
 - Chamber 1: **CLEAN WATER** (pale blue)
 - Chamber 3: **TAP WATER?**
 - Chamber 4: **TOXIC SLIME**
 - Chamber 6: **IRRADIATED**
 - Chamber 8: **VOID** (black with a violet glow)
 
-Dark liquids such as VOID stay dark in the pipes with just a faint sheen; their glow shows on the liquid front and the splashes. It colours the pipes as they fill, the liquid front, the spill, the particles and the dispenser's sight glass (just a sliver at the bottom during the countdown, filling up over `spoutFillSeconds` as the spout fills, then full while it flows), and it's listed on the wall monitor as MEDIUM. Add entries or reorder them freely. The spill is now a glossy 3D slime blob with satellite droplets that splats out and keeps jiggling, rather than a flat decal.
+Dark liquids such as VOID stay dark in the pipes with just a faint sheen; their glow shows on the liquid front and the splashes. It colors the pipes as they fill, the liquid front, the spill, the particles and the dispenser's sight glass (just a sliver at the bottom during the countdown, filling up over `spoutFillSeconds` as the spout fills, then full while it flows), and it's listed on the wall monitor as MEDIUM. Add entries or reorder them freely. The spill is now a glossy 3D slime blob with satellite droplets that splats out and keeps jiggling, rather than a flat decal.
 
 ## Where the info lives
 
@@ -82,19 +82,35 @@ Dark liquids such as VOID stay dark in the pipes with just a faint sheen; their 
 
 When the liquid spills:
 - **Results:** the big monitor on the back wall shows them. That covers distance, loops, earnings, wasted pieces, the belt and flow speed bonuses, **LAB FUNDING** (the shared bank) and per-player performance notes (most pipes laid, master thief, demolition expert, butterfingers, bunny hopper). During play, the monitor shows an ominous "monitoring subjects" screen.
-- **Camera:** it drops in closer, tilts up to show the wall, and follows the group. Everyone can roam, jump and sprint, and new players can join.
-- **Teleporters:** government-lab teleporter chambers rise out of the floor in the top walkway. Each has a riveted steel deck with a hazard ring, an arch of pillars wrapped in copper and chrome pipes, a downward emitter, twin Tesla coils and an amperage meter. A steel plaque on the crossbar reads ~~INCINERATOR~~ ~~CLONE REINTEGRATION~~ TELEPORTER, with the strike-outs painted in the same red, and has an LED strip showing the destination. Winning gives you **RETRY** and **NEXT**; losing gives only **RETRY**.
+- **Camera:** it drops in closer, tilts up to show the wall, and follows the group. Everyone can roam, jump and dash, and new players can join.
+- **Teleporters:** government-lab teleporter chambers rise out of the floor in the top walkway. Each has a riveted steel deck with a hazard ring, an arch of pillars wrapped in copper and chrome pipes, a downward emitter, twin Tesla coils and an amperage meter. A steel plaque on the crossbar reads ~~INCINERATOR~~ ~~CLONE REINTEGRATION~~ TELEPORTER, with the strike-outs painted in the same red, and has an LED strip showing the destination. Winning gives you **RETRY**, **BACK TO BASE** (in the middle) and **NEXT**; losing gives **RETRY** and **BACK TO BASE**. They come up from under the floor like a secret elevator, one after the other.
 - **Charging:** while *every* player stands on *a* teleporter, the charge builds over `readyCountdownSeconds` (3). The coils hum louder and higher, arcs crawl between the coils and the emitter, the amperage meter climbs from blue to yellow to red, and the HUD and monitor count up "CHARGING 74% · 6,660 AMPS". Stepping off makes it bleed away fast.
-- **The strike:** a random ready player is picked, and the game goes to their pad (3 on NEXT and 1 on RETRY is a 3-in-4 chance of NEXT). The current jumps back and forth between the pads, then lightning strikes every occupied teleporter. There's a white flash, thunder and a big shake, and every critter gets a half-second cartoon electrocution: it flickers between its colour and an x-ray body with a glowing white skeleton inside, jittering in a shower of sparks. Then the skeleton chars black in a puff of smoke, stands there for a beat, and crumbles to dust on the wind. The coils go dead after the strike. The music cuts dead, and after about 2 seconds of silence everyone materialises in the next room with a crackle of sparks while the music fades back in.
+- **The strike:** a random ready player is picked, and the game goes to their pad (3 on NEXT and 1 on RETRY is a 3-in-4 chance of NEXT). The current jumps between the occupied pads, then lightning strikes every occupied teleporter. There's a white flash, thunder and a big shake, and every critter gets a half-second cartoon electrocution: it flickers between its color and an x-ray body with a glowing white skeleton inside, jittering in a shower of sparks. Then the skeleton chars black in a puff of smoke, stands there for a beat, and crumbles to dust on the wind. The coils go dead after the strike. The music cuts dead, and after about 2 seconds of silence everyone materialises in the next room with a crackle of sparks while the music fades back in.
 - **Next chamber:** the chamber number goes up, grime rises by `grimePerChamber` (0.2), and a winning chamber's earnings are added to LAB FUNDING. Retrying keeps the bank as it is.
 
 The Inspector's **Grime** and **Chamber Number** are starting values; changing them still takes effect on the next rebuild.
+
+## The base
+
+The game starts at the base (`startInBase`, under Base in GameConfig). It's "chamber 00": the same kind of room, with no clock.
+- **Lockers:** one per player in the back wall, with the player's color on the header, door posts and lamp ("P1 LOCKER"). A locker stays grey until someone joins in that slot. Each one is all three closets in one: player color, species, size, body color, hat, torso, the secret rows and feet. Changing species or size raises the reactor tube for the flood-and-swap; body color fires the spray nozzles; clothes get the wardrobe's puff. You can only use your own locker, and that's also where you appear when you join.
+- **Player color:** the top row of a locker, PLAYER. Colors other players already have are skipped. Your floor ring, the HUD, your panels and your locker all change with it, and it's remembered for your slot next time (if someone else has it by then, you get your default or the first free one).
+- **One color list:** body colors and player colors come from the same list (`CritterLook.Colors`), so a MINT body and a MINT ring are the same mint. Bodies can be any of the 25: SKY, BUBBLEGUM, TANGERINE, LILAC, MINT, LEMON, CRIMSON, TEAL, MOSS, COCOA, SNOW, CHARCOAL, LIME, CHERRY, HONEY, GOLD, GUNMETAL, CONCRETE, ASH, TOXIC, HAZMAT, BLEACH, CHROME, IRIDESCENT, BLACKLIGHT. Some have a special finish on the critter (`CritterLook.Finish`): GOLD, GUNMETAL and CHROME are metal; TOXIC glows neon green and BLACKLIGHT glows violet-white like it's under a UV lamp; IRIDESCENT shimmers through the rainbow, faster while you move; HAZMAT is glossy. Player colors skip the dark, muted, grey, white and special ones (CRIMSON, MOSS, COCOA, CHARCOAL, GUNMETAL, CONCRETE, ASH, BLEACH, CHROME, IRIDESCENT, BLACKLIGHT) that would vanish as a floor ring or on the HUD; each entry's `player` flag decides. Add new colors at the end of the list, because saves store the position.
+- **Layout:** the same as every chamber (lockers on the far left of the back wall, the water machine on its right), plus the extra machines in a row.
+- **Shop:** the first machine sells water bottles (its lit sign has the big bottle icon and H2O, and the icon is on both its sides too; the machines stand far enough apart to see them). Its bottles sit on shelves in a real recess behind the glass. The others (`baseVendingMachines`, 4 in all) are placeholders: faded paint, a dead "???" sign, empty dusty shelves and a crooked taped-on OUT OF ORDER sign. Pressing Use on one just gets a thump. Machines are solid now, so critters walk around them.
+- **Practice:** the board and belt work in free play, like off the clock, so you can learn the controls with nothing at stake. Falling in the pit is free here (`freePitInBase`).
+- **Grime:** the base is as grimy as the deepest chamber you've reached, and uses that chamber's liquid color.
+- **Monitor:** shows the deepest chamber, lab funding, whether you have water bottles, and how many subjects have joined.
+- **Leaving:** once someone has joined, the teleporters rise. (Passing a chamber unlocks the next one, so CONTINUE takes you there even if you went back to base instead of on.) The first time there's one, to chamber 01. After that there are two: **FROM THE TOP: CHAMBER 01** and **CONTINUE: CHAMBER N** (the deepest you've reached). Everyone stands on one, the same as between chambers.
+- **Coming back:** pick **BACK TO BASE** at the end of any chamber.
+
+The deepest chamber is saved between sessions. **Reset Unlocks and Stats** clears it too.
 
 ## Arrival pads
 
 Joining, arriving in a new chamber, and coming back from the pit all use the same little elevator:
 1. A hatch slides open in the floor.
-2. A pad rises in a beam of your player colour.
+2. A pad rises in a beam of your player color.
 3. Your critter materialises on it.
 4. The pad sinks and the hatch shuts.
 
@@ -104,39 +120,109 @@ In a new chamber the pads come up one after another.
 
 After the spill, the round is over, but nothing stops working. You can still pick up, place, rotate, unscrew and steal pieces, and use the closets. Nothing scores, the liquid stays where it is, and the monitor reads OFF THE CLOCK. The only thing switched off is the flow valve.
 
-## Cosmetic closets
+## Dash
 
-Three booths are set into the back wall, behind a strip of floor past the top belt. They sit under the observation window if the room has one, otherwise at the right end of the wall. They work any time: mid-flow, between rounds, while others are charging a teleporter. Each fits one critter at a time; anyone else trying gets a "nope" and OCCUPIED.
+The old sprint button now **dashes**, Overcooked style: tap it for a quick burst in the direction you're pushing (or facing). You can dash while carrying a piece. Tune it in the config's Player movement section:
+- `dashDistance` (2.2 m)
+- `dashSpeed` (15 m/s; distance ÷ speed is how long it lasts)
+- `dashCooldown` (0.35 s)
+
+`sprintMultiplier` is still in the config but isn't used right now.
+
+## Items, inventory and the vending machine
+
+- **Vending machine:** it stands against the back wall on the right in every room, facing you, with the big bottle icon and H2O on its lit sign and on both sides. At the base there's a row of machines (see The base). It sells **water bottles**. Walk up and press Use to buy them once from the shared bank (`waterBottlePrice`, $750 by default). **Everyone** gets a bottle, including players who join later. Bought items are saved between sessions.
+- **Shop items:** every item has a home machine (`chamber` in `Items.All`: 0 = the base, n = chamber n), a price, and how many times it can be bought. Items are bought once for the whole team from the shared bank. Upgradeable ones (the backpack) can be bought again at the same machine, each time costing `priceGrowth` times the last; the price display shortens big numbers ($12.5K, $1.6M, $4.9B). The base's row holds the base items (backpack, Count Ant, pirate's foot), then the water bottle as a placeholder. Items that need another item first (the funnel needs the bottle) say so on the machine. Each chamber has its own item's machine (water in 1, funnel in 2, crossing sign in 3), plus a filter machine from chamber 4 on, or one out-of-order machine if there's nothing yet.
+- **Backpack (base):** carry spare pieces on your back, bought for everyone. `backpackPrice` ($500) for the first, then each upgrade is `backpackPriceGrowth` (5×) the last, up to `backpackMaxLevel` (10). Each level holds `backpackPiecesPerLevel` (1) more piece.
+  - **Stash:** holding a piece with room in the pack, grab another from the belt or the floor and the one in your hands shrinks and flies onto your back.
+  - **Unpack:** place a piece on the board and the next spare pops out into your hands. With empty hands and nothing in reach, Use takes one out.
+  - **Its button:** the backpack goes on an item button like the water bottle. Press it holding a piece to stow it (PACK FULL if there's no room), or with empty hands to take the top one out. Items you already owned without a button get put on a free one automatically.
+  - **Looks:** level 1 is a camping backpack, level 2 adds a fanny pack on top. From level 3 it becomes a white lab **hover rig**: an open back plate with an arm down to a glowing emitter, and the spare pieces float in a soft blue beam behind you, starting down by your legs (two columns side by side once it holds more than 4). Later levels add twin emitters, orange safety trim, fins and a halo at the top of the beam. The pack and stack ride with your body, so they jump and tip forward when you crawl. Each upgrade gets a banner with its stage name.
+  - **Inventory:** shows how many you're carrying, the capacity and the level.
+- **A Count Ant (base, $1,500):** a tiny accountant. Everything the team earns, pipes and loops, pays `countAntBonus` (+10%) more.
+- **Lucky Pirate's Foot (base, $2,000):** it's just a peg leg. Raises the team's luck by `pirateFootLuck` (+50%): every lucky-break chance is multiplied by 1 + luck. Whenever something only happened thanks to luck, LUCKY! pops up over it in green. Lucky breaks so far: a filled pipe paying double (BONUS x2, `bonusPipeChance` 5%) and the Crossing Sign's extra crosses.
+- **Crossing Sign (chamber 3, $3,000):** a crossing guard's STOP paddle. Crosses come down the belt `crossingSignBoost` (+25%) more often: some pieces turn into crosses as they're dealt, and each of those arrives with the paddle held up over it, waving. If luck tipped it, LUCKY! shows under the paddle too.
+- **Funnel (chamber 2, $2,500, needs the water bottle):** stand in the leak when a chamber ends to catch it in your bottle. Clean water refills it to full. Anything else fills it too, but contaminated (the inventory says with what), and drinking it has side effects:
+  - **TOXIC SLIME:** faster, one extra dash, and the hiccups (random hops, HIC!).
+  - **IRRADIATED:** dashes go 1.7× as far, and you shed glowing yellow-green sparks.
+  - **VOID:** two extra dashes that go twice as far, but no extra walking speed.
+  - Anything else: tastes funny (normal sip effects).
+  Catch clean water again to wash it out.
+- **Filter piece (chamber 4 and every chamber after, $400 each):** buying one drops it straight into your hands (what you were holding goes in your backpack, or on the floor). It's a T-shaped pipe with a glass canister: place it in any orientation. Liquid that comes in one arm fills to the canister and **splits out the other two**, so you now have two streams to keep fed, and if either one leaks, the round ends.
+  - **Which way:** the first arm clockwise from where it came in gets the **purified** stream; the other gets the **concentrate**.
+  - **Grades:** each pass refines further, up to grade 3. Toxic slime splits into FILTERED WATER and CONCENTRATED TOXIC SLIME. Water splits into a purer grade (FILTERED, PURE, DEIONIZED) and the rest. Concentrates go CONCENTRATED, DOUBLE-CONCENTRATED, HYPER-CONCENTRATED. Each stream shows its own color in the pipes: purer water paler and brighter, concentrates deeper and glowing.
+  - **Money:** every pipe a refined stream fills pays `filterGradeBonus` (+50%) more per grade.
+  - **With the funnel:** you catch whichever stream leaked. Filtered water is a better sip (faster, an extra dash; PURE more so), concentrates double or triple a liquid's side effects, and **grade 3 of anything kills you** when you drink it (you're reprinted at your locker, free).
+- **Water bottle:** `waterBottleCharges` sips (10). A sip lasts `waterBottleBuffSeconds` (45 s). While it lasts you walk `waterBottleSpeedMultiplier` faster (×1.2) and can dash `waterBottleDashes` times in a row (2) before the cooldown. Each player's sips are their own.
+- **Inventory:** press the inventory button to open a big panel over your critter. It's drawn on the screen overlay like the valve guide, so it stays readable at any camera distance. Prompts sit on the thing they act on instead of in a line of text, and keys are drawn as little key caps or controller buttons. While it's open:
+  - your critter stands still;
+  - up/down picks an item (▲▼ show when there's more than one); each row shows the item's icon and charges;
+  - the highlighted row shows `[E] ›`: Use flips the panel to that item's **details page** (big icon, description, charges, which button it's on). Use or Jump goes back to the list;
+  - the **button bar** at the bottom has one slot per item button, showing which item is on it, with the button underneath. Press an item button to put the highlighted item there (it swaps if it was on another one). If the highlighted item isn't on a button yet, the empty slots pulse;
+  - the inventory button (top-right corner, `Tab ×`) or Jump closes it.
+
+  Passive items will show a label such as ALWAYS ON instead of a button. The panel's size is set in GameConfig under Items & vending machine: `inventoryWidth`, `inventoryRowHeight`, `inventoryTextScale`, `inventoryPadding` and `inventoryOpacity`. Changes show up live in Play mode.
+- **Icons:** `Resources/Icons` holds blank input glyphs (key cap, wide key cap, trigger, bumper, face button, pill) that the game writes the key's name on, and the item icons. They're rendered in Blender by `CharacterFactory~/icons.py`. An editor import rule keeps them at full size; if they look stretched or blurry, right-click the Icons folder and choose Reimport.
+- **Teleporters:** at the end of a round they come up from under the floor like a secret elevator: hazard doors slide open, the teleporter rides up the shaft and lands with a thunk, and the frame stays as its platform. Standing on one only counts once it has landed.
+- **Sipping:** the critter pulls the bottle out into its right hand, lifts it to its mouth, tips its head back for a few glugs, then puts it away (about 2 seconds). You can keep moving while it drinks.
+- **Using items:** press an item's button any time to use it.
+
+| | Controller | WASD | Arrows |
+|---|---|---|---|
+| Inventory | Select (View) | Tab | Backspace |
+| Item buttons 1 · 2 · 3 | RT · LB · RB | 1 · 2 · 3 | End · PgDn · PgUp |
+
+Settings are in the config's **Items & vending machine** section, with `enableVendingMachine` to turn it off. **Under Pressure > Reset Unlocks and Stats** (and `resetUnlocksOnPlay`) also forgets bought items, for testing.
+
+## Characters
+
+The yetis and skeletons are real models. They're built in Blender by the scripts in `CharacterFactory~/`, which Unity ignores, and exported to `Resources/Characters/<Species>_S/M/L.fbx`.
+- **Skeleton:** the bones take your Spray Booth color, the teeth stay white, and the eyes are little glowing dots deep in the sockets.
+- **Sharc:** an upright chubby shark on stubby legs, with its tail flopped on the floor. The top takes your Spray Booth color; the belly, chin and soles stay white. It has a wide grin of little triangle teeth, beady eyes, gills and a dorsal fin on its head.
+- **Slime:** a see-through half-dome of goo in your Spray Booth color, with dot eyes, goo-blob hands and bubbles suspended inside.
+  - **Cosmetics:** the hat sits on top; shirts, trunks and shoes float inside the goo.
+  - **Moving:** it squashes along instead of walking.
+  - **Trail:** it leaves goo blobs in its color on the floor, which shrink away after about 5 seconds.
+- **Chihuahua:** a Chihuahua's head on the human test-subject body. The jumpsuit takes your Spray Booth color; the fawn fur, cream muzzle and pink ears keep their modelled colors.
+- **Loading:** the game loads them at runtime, turns them upright and facing forward whatever axes the FBX used, and puts their feet on the floor.
+- **Color:** it recolors them by material name. The fur takes your Spray Booth color; the face, claws and eyes stay fixed.
+- **Animation:** it animates each part in code. The eyes blink and drift, the head shakes, the body squashes and bobs, the hands float and carry at chest height, the arms aim at the hands, and the legs swing from the hip.
+- **Fitting to size:** hats, shirts, trunks, floaties and shoes scale to each body. Your floor ring and collider also grow with the size you pick.
+
+## Lockers (cosmetics)
+
+Every room, the base and each chamber, has one locker per player on the far left of the back wall, behind a strip of floor past the top belt. Each player appears in front of their own locker (joining, arriving by teleporter, coming back from the pit). Lockers work any time: mid-flow, between rounds, while others are charging a teleporter. You can only use your own. A locker is all three of the old closets in one, and each row plays its old closet's show:
 
 - **Use:** walk onto the hazard plate in front of a door and press Use. You drop anything you're holding and hop inside.
   - Up/down picks a row.
   - Left/right (or either rotate key) changes it live.
   - Use or Jump steps back out.
   - The panel docks along the bottom of the screen, one column per player.
-- **BIO-REACTOR (species):** BLORB (the original) or PEEPER (a tall bean with one huge eye, fin ears and twin antennae). A glass tube rises from under the floor grate around you. Changing species floods it with this chamber's liquid, swaps your body when it's full, then drains.
-- **SPRAY BOOTH (colour):** 12 body colours: Sky, Bubblegum, Tangerine, Lilac, Mint, Lemon, Crimson, Teal, Moss, Cocoa, Snow, Charcoal. Four nozzles blast you with the new colour, and the palette strip on the back wall highlights your pick. Your floor ring keeps your player colour, so you can always find yourself.
-- **WARDROBE (outfit):**
+- **Player color:** see The base.
+- **Species and size (the Bio-Reactor show):** YETI, SKELETON, CHIHUAHUA or SLIME, or SHARC once it's unlocked. All five are modelled characters in SMALL, MEDIUM and LARGE. Changing species or size raises a glass tube from under the floor grate around you, floods it with this chamber's liquid, swaps your body when it's full, then drains.
+- **Body color (the Spray Booth show):** any color from the one color list (see The base). Four nozzles blast you with the new color. Your floor ring keeps your player color, so you can always find yourself.
+- **Outfit (the Wardrobe show):**
   - **Hat:** baseball cap, cowboy hat, sombrero, shower cap.
   - **Torso:** lab coat, flannel shirt, biker jacket.
   - **Feet:** clown shoes, sneakers, military boots.
-- **Secret unlocks:** some items start locked and are skipped in the closets until you earn them. The ARMS and LEGS rows don't appear in the wardrobe at all until you've unlocked something for them. Personal unlocks belong to a player slot. Unlocking one gets a banner, a fanfare and confetti.
+- **Secret unlocks:** some items start locked and are skipped in the closets until you earn them. The ARMS and LEGS rows don't appear in the locker at all until you've unlocked something for them. Personal unlocks belong to a player slot. Unlocking one gets a banner, a fanfare and confetti.
 
   | Item | Where | How (config value) |
   |---|---|---|
-  | Shower cap | Wardrobe, hat | Be standing in the spray when clean water leaks out, once (`unlockShowerCapSprays` 1) |
-  | Swim trunks | Wardrobe, legs | Get sprayed like that 10 times (`unlockSwimTrunksSprays`) |
-  | Arm floaties | Wardrobe, arms | Hop over a pipe full of clean water 10 times. The same pipe counts every time (`unlockFloatiesWaterHops`) |
-  | **SHARC** | Bio-Reactor | The whole team fills 1,000 pipes with clean water, all-time (`unlockSharcCleanPipes`) |
+  | Shower cap | Locker, hat | Be standing in the spray when clean water leaks out, once (`unlockShowerCapSprays` 1) |
+  | Swim trunks | Locker, legs | Get sprayed like that 10 times (`unlockSwimTrunksSprays`) |
+  | Arm floaties | Locker, arms | Hop over a pipe full of clean water 10 times. The same pipe counts every time (`unlockFloatiesWaterHops`) |
+  | **SHARC** | Locker, species | The whole team fills 1,000 pipes with clean water, all-time (`unlockSharcCleanPipes`) |
 
-  "Clean water" means any chamber whose liquid name contains WATER. `sprayReach` (2.2 m) sets how far the leak's spray reaches. `unlockAllCosmetics` makes everything available for testing. **Under Pressure > Reset Unlocks and Stats** (or the `resetUnlocksOnPlay` checkbox) wipes progress, and **Under Pressure > Log Unlock Progress** prints where each slot stands.
+  "Clean water" means any chamber whose liquid name contains WATER. `sprayReach` (2.2 m) sets how far the leak's spray reaches. `unlockAllCosmetics` makes everything available for testing, and `testOwnAllItems` gives the team every shop item (at least level 1) without buying. **Under Pressure > Reset Unlocks and Stats** (or the `resetUnlocksOnPlay` checkbox) wipes progress, and **Under Pressure > Log Unlock Progress** prints where each slot stands.
 - **After an unlock:**
   - The banner stays up for about 3 seconds.
-  - The unlock goes at the top of the wall monitor's PERFORMANCE NOTES as `NEW!  P1  unlocked SHOWER CAP (WARDROBE)`. If the results are already up when it happens, it's added straight away.
-  - A small gold hologram, styled like the spout's readout, floats over the closet with NEW!, who it's for and what it is, with confetti drifting through it. It goes away once that player has been inside that closet.
-  - In the closet, the item itself shows `NEW!` next to its name.
+  - The unlock goes at the top of the wall monitor's PERFORMANCE NOTES as `NEW!  P1  unlocked SHOWER CAP (YOUR LOCKER)`. If the results are already up when it happens, it's added straight away.
+  - A small gold hologram, styled like the spout's readout, floats over that player's locker with NEW! and what it is, with confetti drifting through it. It goes away once they've been inside.
+  - In the locker, every row with something new gets a gold NEW! sticker slapped on its right end (and its label turns gold), so you know which section to look in. Land on the new item itself and the sticker grows, wobbles and bursts confetti, and keeps sprinkling it while it's showing.
 - **SHARC:** a chubby upright shark pup with a rounded snout, beady eyes, a grin of tiny teeth, gill slits, a forked tail, and a dorsal fin that wobbles behind it.
 - **Saved looks:** looks are saved per player slot in PlayerPrefs (`pd_look0` … `pd_look3`), so P2 comes back as P2 next session.
-- **Config (Cosmetic closets section):** `enableBioReactor`, `enableSprayBooth` and `enableWardrobe` toggle each booth. `closetStripDepth` sets the floor strip in front of them. With all three off, the room goes back to its old depth.
+- **Config (Lockers section):** `enableLockers` turns them off; `closetStripDepth` sets the floor strip in front of them. With lockers off, the room goes back to its old depth. (The separate Bio-Reactor, Spray Booth and Wardrobe closets are still in the code, but no room builds them any more.)
 
 ## Style: test chamber + grime
 
@@ -183,8 +269,8 @@ Scripts/
   Board/     GridBoard (tiles, occupancy, BFS connectivity to spout), Spout
   Pipes/     PipeBuilder (procedural geometry & channel paths), PipePiece (states, fill, latch visuals)
   Conveyor/  Conveyor (belt, bag spawner)
-  Player/    PlayerController (movement/climb/interaction/closet mode), PlayerRig (Blorb + Peeper species, procedural animation),
-             CritterLook (species/colour/outfit + save), Accessories (hats, torsos, shoes), Closet (the three booths),
+  Player/    PlayerController (movement/climb/interaction/closet mode), PlayerRig (loads FBX characters from Resources/Characters and animates their parts; procedural SHARC),
+             CritterLook (species/color/outfit + save), Accessories (hats, torsos, shoes), Closet (the three booths),
              PlayerInputs (per-device action maps), JoinManager (drop-in co-op), PlacementPreview (tile frame + ghost)
   Flow/      FlowController (liquid simulation, loop detection, spill warning)
   Style/     Theme (palette + grime lerp), ChamberBuilder (walls, window, signage, grime, Flicker, Watcher)
@@ -196,7 +282,7 @@ Editor/      UnderPressureMenu (Create Playable Scene / Create Config Asset / Re
 
 **Swapping in real art later:** `PipeBuilder.Build` and `PlayerRig.Build` are the only places that create visuals. Replace them with prefab instantiation and keep the same transforms (`clamps`, `staples`, channel `segments`). The sound effects are public `AudioClip` fields on `Sfx`, so you can assign real clips.
 
-**Co-op:** `JoinManager` (on the bootstrap object) watches for join presses and keeps a list of joined slots, which survive a restart. Each player gets a `PlayerInputs` action map locked to its own device (or keyboard half), its own placement preview and progress ring, and a colour from `JoinManager.PlayerColors`.
+**Co-op:** `JoinManager` (on the bootstrap object) watches for join presses and keeps a list of joined slots, which survive a restart. Each player gets a `PlayerInputs` action map locked to its own device (or keyboard half), its own placement preview and progress ring, and a color from `JoinManager.PlayerColors`.
 
 ## Known limits
 

@@ -23,10 +23,10 @@ namespace UnderPressure
 
         static readonly Lock[] Locks =
         {
-            new Lock { part = Part.Hat, index = 4, stat = Sprayed, name = "SHOWER CAP", where = "WARDROBE", closet = ClosetKind.Wardrobe, need = c => c.unlockShowerCapSprays },
-            new Lock { part = Part.Legs, index = 1, stat = Sprayed, name = "SWIM TRUNKS", where = "WARDROBE", closet = ClosetKind.Wardrobe, need = c => c.unlockSwimTrunksSprays },
-            new Lock { part = Part.Arms, index = 1, stat = WaterHops, name = "ARM FLOATIES", where = "WARDROBE", closet = ClosetKind.Wardrobe, need = c => c.unlockFloatiesWaterHops },
-            new Lock { part = Part.Species, index = 2, stat = TeamCleanPipes, team = true, name = "SHARC", where = "BIO-REACTOR", closet = ClosetKind.BioReactor, need = c => c.unlockSharcCleanPipes },
+            new Lock { part = Part.Hat, index = 4, stat = Sprayed, name = "SHOWER CAP", where = "YOUR LOCKER", closet = ClosetKind.Wardrobe, need = c => c.unlockShowerCapSprays },
+            new Lock { part = Part.Legs, index = 1, stat = Sprayed, name = "SWIM TRUNKS", where = "YOUR LOCKER", closet = ClosetKind.Wardrobe, need = c => c.unlockSwimTrunksSprays },
+            new Lock { part = Part.Arms, index = 1, stat = WaterHops, name = "ARM FLOATIES", where = "YOUR LOCKER", closet = ClosetKind.Wardrobe, need = c => c.unlockFloatiesWaterHops },
+            new Lock { part = Part.Species, index = 3, stat = TeamCleanPipes, team = true, name = "SHARC", where = "YOUR LOCKER", closet = ClosetKind.BioReactor, need = c => c.unlockSharcCleanPipes },
         };
 
         static GameConfig Cfg => Game.Config != null ? Game.Config : DefaultCfg;
@@ -54,6 +54,14 @@ namespace UnderPressure
         {
             for (int i = 0; i < Locks.Length; i++)
                 if (Locks[i].part == part && Locks[i].index == index) return PlayerPrefs.GetInt(NewKey(slot, i), 0) == 1;
+            return false;
+        }
+
+        /// <summary>Does this row (part) have anything new and unseen for this player? (The locker puts a NEW! sticker on it.)</summary>
+        public static bool AnyNew(int slot, Part part)
+        {
+            for (int i = 0; i < Locks.Length; i++)
+                if (Locks[i].part == part && PlayerPrefs.GetInt(NewKey(slot, i), 0) == 1 && Met(Locks[i], slot)) return true;
             return false;
         }
 
@@ -194,22 +202,41 @@ namespace UnderPressure
             if (!LiquidIsWater) return;
             dir.y = 0f;
             dir = dir.sqrMagnitude > 0.001f ? dir.normalized : Vector3.forward;
-            float reach = Cfg.sprayReach;
             foreach (var p in Game.Players)
             {
-                if (p == null || !p.CanBeSprayed) continue;
-                Vector3 d = p.transform.position - pos;
-                d.y = 0f;
-                float along = Vector3.Dot(d, dir);
-                if (along < -0.4f || along > reach) continue;
-                float side = (d - dir * along).magnitude;
-                if (side > 0.55f + Mathf.Max(0f, along) * 0.3f) continue; // the spray fans out a little
+                if (p == null || !InSpray(p, pos, dir)) continue;
                 p.GetSprayed(dir);
                 Add(p, Sprayed);
             }
         }
 
+        /// <summary>Is this critter standing in the leak's spray (a cone 'sprayReach' long from pos along dir)?</summary>
+        public static bool InSpray(PlayerController p, Vector3 pos, Vector3 dir)
+        {
+            if (p == null || !p.CanBeSprayed || Cfg == null) return false;
+            dir.y = 0f;
+            dir = dir.sqrMagnitude > 0.001f ? dir.normalized : Vector3.forward;
+            Vector3 d = p.transform.position - pos;
+            d.y = 0f;
+            float along = Vector3.Dot(d, dir);
+            if (along < -0.4f || along > Cfg.sprayReach) return false;
+            float side = (d - dir * along).magnitude;
+            return side <= 0.55f + Mathf.Max(0f, along) * 0.3f; // the spray fans out a little
+        }
+
         /// <summary>Wipe all saved stats and unlocks (looks are kept, minus anything now locked).</summary>
+        const string FurthestKey = "up_furthest";
+
+        /// <summary>The deepest chamber the team has reached (the base gets as grimy as this, and you can jump back to it).</summary>
+        public static int Furthest => Mathf.Max(1, PlayerPrefs.GetInt(FurthestKey, 1));
+
+        public static void ReachedChamber(int n)
+        {
+            if (n <= Furthest) return;
+            PlayerPrefs.SetInt(FurthestKey, n);
+            PlayerPrefs.Save();
+        }
+
         public static void ResetAll()
         {
             for (int slot = 0; slot < JoinManager.MaxPlayers; slot++)
@@ -219,6 +246,8 @@ namespace UnderPressure
                 for (int i = 0; i < Locks.Length; i++) PlayerPrefs.DeleteKey(NewKey(slot, i));
             }
             PlayerPrefs.DeleteKey(TeamKey(TeamCleanPipes));
+            PlayerPrefs.DeleteKey(FurthestKey);
+            Items.ResetAll(); // bought items too (testing)
             PlayerPrefs.Save();
         }
     }

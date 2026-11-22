@@ -58,6 +58,9 @@ MonoBehaviour:
   acceleration: 45
   turnSpeedDegrees: 1080
   sprintMultiplier: 1.5
+  dashDistance: 2.2
+  dashSpeed: 15
+  dashCooldown: 0.35
   jumpHeight: 0.7
   jumpSeconds: 0.45
   crawlSpeedMultiplier: 0.4
@@ -70,19 +73,44 @@ MonoBehaviour:
   unboltSeconds: 0.35
   unscrewSeconds: 1.4
   stealCooldown: 0.75
+  enableVendingMachine: 1
+  waterBottlePrice: 0
+  waterBottleCharges: 10
+  waterBottleBuffSeconds: 45
+  waterBottleSpeedMultiplier: 1.2
+  waterBottleDashes: 2
+  backpackPrice: 500
+  backpackPriceGrowth: 5
+  backpackMaxLevel: 10
+  backpackPiecesPerLevel: 1
+  countAntPrice: 1500
+  countAntBonus: 0.1
+  pirateFootPrice: 2000
+  pirateFootLuck: 0.5
+  bonusPipeChance: 0.05
+  funnelPrice: 2500
+  crossingSignPrice: 3000
+  crossingSignBoost: 0.25
+  filterPrice: 400
+  filterFromChamber: 4
+  filterGradeBonus: 0.5
+  inventoryWidth: 600
+  inventoryRowHeight: 60
+  inventoryTextScale: 0.9
+  inventoryPadding: 28
+  inventoryOpacity: 0.4
   pitRespawnCost: 50
   pitRespawnDelay: 1.6
+  startInBase: 1
+  freePitInBase: 1
+  baseVendingMachines: 4
   grimePerChamber: 0.2
   readyCountdownSeconds: 3
   liquids:
-  - name: CLEAN WATER
+  - name: WATER
     fromChamber: 1
     color: {r: 0.55, g: 0.85, b: 1, a: 1}
     glow: {r: 0.25, g: 0.6, b: 1.3, a: 1}
-  - name: TAP WATER?
-    fromChamber: 3
-    color: {r: 0.5, g: 0.8, b: 0.72, a: 1}
-    glow: {r: 0.25, g: 0.7, b: 0.6, a: 1}
   - name: TOXIC SLIME
     fromChamber: 4
     color: {r: 0.25, g: 1, b: 0.45, a: 1}
@@ -95,14 +123,16 @@ MonoBehaviour:
     fromChamber: 8
     color: {r: 0.03, g: 0.02, b: 0.05, a: 1}
     glow: {r: 0.55, g: 0.15, b: 1.1, a: 1}
+  - name: ???
+    fromChamber: 10
+    color: {r: 1, g: 1, b: 1, a: 1}
+    glow: {r: 1, g: 1, b: 1, a: 1}
   gameplayCameraPitch: 48
   gameplayCameraZoom: 0.85
   intermissionCameraPitch: 27
   intermissionCameraPitchFront: 20.1
   intermissionCameraZoom: 0.598
-  enableBioReactor: 1
-  enableSprayBooth: 1
-  enableWardrobe: 1
+  enableLockers: 1
   closetStripDepth: 1.7
   unlockShowerCapSprays: 1
   unlockSwimTrunksSprays: 10
@@ -110,6 +140,7 @@ MonoBehaviour:
   unlockSharcCleanPipes: 1000
   sprayReach: 2.2
   unlockAllCosmetics: 0
+  testOwnAllItems: 0
   resetUnlocksOnPlay: 0
   musicVolume: 0.55
   musicLeadVolume: 0.7
