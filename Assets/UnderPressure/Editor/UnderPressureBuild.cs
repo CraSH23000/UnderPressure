@@ -29,7 +29,24 @@ namespace UnderPressure.EditorTools
 
         public int callbackOrder => 0;
 
-        public void OnPreprocessBuild(BuildReport report) => Prepare();
+        public void OnPreprocessBuild(BuildReport report)
+        {
+            CheckVersion(report.summary.outputPath);
+            Prepare();
+        }
+
+        // Build folders are named after the version (e.g. "Version 0.0.230"). Warn when that doesn't match
+        // Player → Version, because that's what the HUD, pause menu and crash logs report.
+        static void CheckVersion(string outputPath)
+        {
+            string version = PlayerSettings.bundleVersion;
+            var m = System.Text.RegularExpressions.Regex.Match(outputPath ?? "", @"\d+\.\d+\.\d+");
+            if (m.Success && m.Value != version)
+                Debug.LogWarning($"[UnderPressure] Building to '{outputPath}', but Player → Version is {version}. " +
+                                 $"The game will report v{version}. Update Project Settings → Player → Version if that's wrong.");
+            else
+                Debug.Log($"[UnderPressure] Building v{version}.");
+        }
 
         [MenuItem("Under Pressure/Prepare Shaders For Build")]
         public static void PrepareMenu()

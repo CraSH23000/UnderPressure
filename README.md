@@ -17,6 +17,15 @@
 
 Windows 10/11, 64-bit. If SmartScreen warns about an unrecognised app, choose **More info → Run anyway** (the build isn't code-signed).
 
+### Reporting bugs
+
+Please include the **version number**. It's in the bottom-right corner of the screen and of the pause menu (e.g. `v0.0.230`).
+
+If the game crashed or misbehaved, attach the log too (paste these paths into File Explorer's address bar):
+- **Log of the last session:** `%USERPROFILE%\AppData\LocalLow\CraSH23000\UnderPressure\Player.log`
+  (`Player-prev.log` next to it is the session before; the version is on its first lines.)
+- **Crash reports:** `%TEMP%\CraSH23000\UnderPressure\Crashes\`. Zip the newest `Crash_…` folder.
+
 ## Controls
 
 Nobody is in the level until someone joins. Press your join button at any time to drop in.
@@ -71,9 +80,13 @@ UnderPressure_Handoff.md   design notes, decisions and the to-do list
 
 1. Bump **Project Settings → Player → Version**.
 2. Build to `bin/` (it's git-ignored).
-3. Zip the build **without** the `*_BackUpThisFolder_ButDontShipItWithYourGame` folder, and name it `UnderPressure-Windows-x64-vX.Y.Z.zip`.
+3. Zip the build plus a copy of `LICENSE`, **without** the `*_BackUpThisFolder_ButDontShipItWithYourGame` folder, and name it `UnderPressure-Windows-x64-vX.Y.Z.zip`.
 4. On GitHub: **Releases → Draft a new release**, tag `vX.Y.Z`, and attach the zip.
 
 ## Status
 
 An early, actively developed prototype. Expect rough edges, placeholder art in places, and balance that changes often. See [`UnderPressure_Handoff.md`](UnderPressure_Handoff.md) for what's planned.
+
+## License
+
+[MIT](LICENSE) © 2026 CraSH23000. You're free to use, modify and share it; just keep the copyright notice.

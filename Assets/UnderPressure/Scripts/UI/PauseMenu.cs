@@ -72,6 +72,12 @@ namespace UnderPressure
             content = R("Content", box, Vector2.zero, Vector2.one);
             content.offsetMax = new Vector2(0, -120);
             content.offsetMin = new Vector2(0, 30);
+            // version in the bottom-right corner, in the strip below the content, so playtesters can quote it
+            var ver = R("Version", box, new Vector2(1, 0), new Vector2(1, 0));
+            ver.pivot = new Vector2(1, 0);
+            ver.sizeDelta = new Vector2(400, 28);
+            ver.anchoredPosition = new Vector2(-14, 4);
+            Popup.MakeText(ver.gameObject, BuildInfo.Label, 18, new Color(1f, 1f, 1f, 0.4f), TextAnchor.LowerRight);
             overlay.gameObject.SetActive(false);
 
             nav = new InputAction("MenuNav", InputActionType.Value);

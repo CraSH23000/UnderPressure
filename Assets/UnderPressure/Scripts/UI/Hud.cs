@@ -82,6 +82,10 @@ namespace UnderPressure
             hints = Popup.MakeText(ht.gameObject, "<b>Esc / Start</b>  menu · controls", 22, new Color(1f, 1f, 1f, 0.6f), TextAnchor.LowerLeft);
             hints.supportRichText = true;
 
+            // Version (bottom-right), faint, so playtesters can quote it and it shows in screenshots
+            var vr = Rect("Version", root, new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0), new Vector2(-40, 24), new Vector2(400, 30));
+            Popup.MakeText(vr.gameObject, BuildInfo.Label, 20, new Color(1f, 1f, 1f, 0.45f), TextAnchor.LowerRight);
+
             // Unscrew progress rings (one per player, follows them)
             var ringSprite = Mats.MakeSprite(Mats.RingTexture);
             for (int i = 0; i < JoinManager.MaxPlayers; i++)
