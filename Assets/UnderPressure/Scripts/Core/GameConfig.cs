@@ -250,5 +250,14 @@ namespace UnderPressure
         public float screenShakeScale = 1f;
         public bool hitStop = true;
         [Range(0f, 1f)] public float sfxVolume = 0.8f;
+        [Tooltip("The HUD money counter counts up (and down) digit by digit with an NES-style tick.")]
+        public bool moneyTickSound = true;
+        [Range(0f, 1f)] public float moneyTickVolume = 0.5f;
+        [Tooltip("Counter steps (and ticks) per second.")]
+        public float moneyTicksPerSecond = 30f;
+        [Tooltip("When counting one at a time would take longer than this, each step grows by moneyCountRamp, " +
+                 "so big amounts speed up exponentially (and the tick rises in pitch) instead of taking minutes.")]
+        public float moneyCountMaxSeconds = 2.5f;
+        [Range(1.01f, 2f)] public float moneyCountRamp = 1.18f;
     }
 }

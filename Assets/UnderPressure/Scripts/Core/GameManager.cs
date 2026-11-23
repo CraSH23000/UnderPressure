@@ -13,7 +13,8 @@ namespace UnderPressure
         public bool IsOver => Current == State.Won || Current == State.Lost || Current == State.Lobby;
         /// <summary>At the base: no round at all.</summary>
         public bool InLobby => Current == State.Lobby;
-        public int Money { get; private set; }
+        /// <summary>This round's earnings (paid into LAB FUNDING on a win). The HUD counts up to it.</summary>
+        public long Money { get; private set; }
         public int Distance { get; private set; }
         public int Loops { get; private set; }
         public float CountdownRemaining => countdown;
@@ -24,7 +25,7 @@ namespace UnderPressure
         GridBoard board;
         FlowController flow;
         Hud hud;
-        float countdown, displayMoney, endTime;
+        float countdown, endTime;
         int lastWholeSecond = -1;
         bool goalHit;
         float beltSpeedIntegral, beltTime; // time-weighted belt speed, for the end bonus
@@ -66,7 +67,6 @@ namespace UnderPressure
             pauseRestart.AddBinding("<Gamepad>/select");
             pauseRestart.Enable();
 
-            hud.SetMoney(0);
             hud.SetDistance(0, cfg.goalDistance);
             if (Game.Bootstrap != null && Game.Bootstrap.InBase) { Current = State.Lobby; intermission = true; }
         }
@@ -126,15 +126,7 @@ namespace UnderPressure
 
         void Update()
         {
-            float udt = Time.unscaledDeltaTime;
             if (Paused) return; // the pause menu (PauseMenu, on the HUD) owns pausing now
-            // rolling money counter
-            float diff = Money - displayMoney;
-            if (Mathf.Abs(diff) > 0.01f)
-            {
-                displayMoney = Mathf.MoveTowards(displayMoney, Money, Mathf.Max(40f, Mathf.Abs(diff) * 5f) * udt);
-                hud.SetMoney(Mathf.RoundToInt(displayMoney));
-            }
 
             int joined = Game.Players.Count;
             hud.SetJoinPrompt(joined >= JoinManager.MaxPlayers || joined == 0 ? "" : $"P{joined + 1} join: (A) · Space · Enter");
@@ -249,8 +241,8 @@ namespace UnderPressure
                 $"SUBJECTS  {Game.Players.Count}/{JoinManager.MaxPlayers}\n" +
                 $"MEDIUM  <color=#{ColorUtility.ToHtmlStringRGB(Mats.Liquid)}>{Mats.LiquidName}</color>";
             string footer = Game.Players.Count < JoinManager.MaxPlayers
-                ? $"LAB FUNDING  ${Game.Bootstrap.Bank:N0}   ·   new subjects: press (A) / Space / Enter"
-                : $"LAB FUNDING  ${Game.Bootstrap.Bank:N0}";
+                ? $"LAB FUNDING  ${Cash.Hud(Game.Bootstrap.Bank)}   ·   new subjects: press (A) / Space / Enter"
+                : $"LAB FUNDING  ${Cash.Hud(Game.Bootstrap.Bank)}";
             Game.Monitor.SetLive($"TEST CHAMBER {Game.Bootstrap.ChamberNumber:00}", left, right, footer);
         }
 
@@ -320,24 +312,24 @@ namespace UnderPressure
         string ApplySpeedBonuses()
         {
             if (Money <= 0) return null;
-            int baseMoney = Money;
+            long baseMoney = Money;
             var lines = new System.Collections.Generic.List<string>();
-            int total = 0;
+            long total = 0;
 
             if (beltTime > 0.5f)
             {
                 float avg = beltSpeedIntegral / beltTime;
                 float pct = (avg - 1f) * cfg.beltBonusPerExtraSpeed;
                 if (pct < 0f && !cfg.beltSlowPenalty) pct = 0f;
-                int bonus = Mathf.RoundToInt(baseMoney * pct);
+                long bonus = (long)System.Math.Round(baseMoney * (double)pct);
                 total += bonus;
-                lines.Add(bonus == 0 ? $"Belt avg x{avg:0.##}" : $"Belt avg x{avg:0.##}  {(bonus > 0 ? "+" : "-")}{Mathf.Abs(pct) * 100f:0}%  ({(bonus > 0 ? "+" : "-")}${Mathf.Abs(bonus):N0})");
+                lines.Add(bonus == 0 ? $"Belt avg x{avg:0.##}" : $"Belt avg x{avg:0.##}  {(bonus > 0 ? "+" : "-")}{Mathf.Abs(pct) * 100f:0}%  ({(bonus > 0 ? "+" : "-")}${System.Math.Abs(bonus):N0})");
             }
             if (flowTime > 0.5f)
             {
                 float avg = flowSpeedIntegral / flowTime;
                 float pct = Mathf.Max(0f, (avg - 1f) * cfg.flowBonusPerExtraSpeed);
-                int bonus = Mathf.RoundToInt(baseMoney * pct);
+                long bonus = (long)System.Math.Round(baseMoney * (double)pct);
                 total += bonus;
                 lines.Add(bonus == 0 ? $"Flow avg x{avg:0.##}" : $"Flow avg x{avg:0.##}  +{pct * 100f:0}%  (+${bonus:N0})");
             }
@@ -473,7 +465,7 @@ namespace UnderPressure
             bool bottles = Items.TeamOwns(Items.WaterBottle);
             string left =
                 $"DEEPEST CHAMBER  {furthest:00}\n" +
-                $"LAB FUNDING  <color=#FD4>${Game.Bootstrap.Bank:N0}</color>\n" +
+                $"LAB FUNDING  <color=#FD4>${Cash.Hud(Game.Bootstrap.Bank)}</color>\n" +
                 $"WATER BOTTLES  {(bottles ? "<color=#9EF>ISSUED</color>" : $"${cfg.waterBottlePrice:N0}")}";
             string right =
                 $"SUBJECTS  {Game.Players.Count}/{JoinManager.MaxPlayers}\n" +
@@ -565,7 +557,7 @@ namespace UnderPressure
             if (!allReady && charge <= 0f)
             {
                 hud.SetTimer(title, $"Everyone stand on a teleporter  ·  ready {ready}/{total}", InLobby ? new Color(0.75f, 0.88f, 1f) : Current == State.Won ? Mats.Liquid : Mats.Danger);
-                if (!InLobby && Time.unscaledTime - endTime > 2.5f) Game.Monitor?.ShowFooter($"OFF THE CLOCK   ·   LAB FUNDING  ${Game.Bootstrap.Bank:N0}   ·   ready {ready}/{total}");
+                if (!InLobby && Time.unscaledTime - endTime > 2.5f) Game.Monitor?.ShowFooter($"OFF THE CLOCK   ·   LAB FUNDING  ${Cash.Hud(Game.Bootstrap.Bank)}   ·   ready {ready}/{total}");
                 return;
             }
 

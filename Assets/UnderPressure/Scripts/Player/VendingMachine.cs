@@ -326,13 +326,7 @@ namespace UnderPressure
         }
 
         /// <summary>$500, $12.5K, $1.6M, $977M, $4.9B: fits the little price display.</summary>
-        public static string ShortMoney(long v)
-        {
-            if (v < 10000) return v.ToString("N0");
-            if (v < 1000000) return (v / 1000.0).ToString("0.#") + "K";
-            if (v < 1000000000) return (v / 1000000.0).ToString("0.#") + "M";
-            return (v / 1000000000.0).ToString("0.#") + "B";
-        }
+        public static string ShortMoney(long v) => Cash.Short(v);
 
         // ================================================================== buying
 
@@ -370,7 +364,7 @@ namespace UnderPressure
                 shake = 0.5f;
                 return;
             }
-            Game.Bootstrap.Bank -= (int)price;
+            Game.Bootstrap.Bank -= price;
             Items.BuyForTeam(id);
             int now = Items.Level(id);
             RefreshPrice();
@@ -412,7 +406,7 @@ namespace UnderPressure
                 shake = 0.5f;
                 return;
             }
-            Game.Bootstrap.Bank -= (int)price;
+            Game.Bootstrap.Bank -= price;
             shake = 0.8f;
             signPulse = 1f;
             Popup.Spawn(PromptAnchor, $"-${price:N0}", Mats.Danger, 40, 1f);

@@ -12,10 +12,11 @@ namespace UnderPressure
         public static Sfx I;
 
         public AudioClip pickup, thunk, clank, ratchet, pop, bloop, loop, coin, spill, fanfare, tick, whoosh, hop, nope, rotate, splat;
-        public AudioClip creak, clunk, land, waste, yoink, alarm, hum, zap, thunder, materialize;
+        public AudioClip creak, clunk, land, waste, yoink, alarm, hum, zap, thunder, materialize, moneyTick;
         public AudioClip[] grunts;
 
         AudioSource[] sources;
+        AudioSource tickSource; // the money counter ticks up to 30+ times a second: keep it off the shared pool
         int next;
         const int SR = 44100;
         static System.Random rng = new System.Random(7);
@@ -30,6 +31,9 @@ namespace UnderPressure
                 sources[i].playOnAwake = false;
                 sources[i].spatialBlend = 0f;
             }
+            tickSource = gameObject.AddComponent<AudioSource>();
+            tickSource.playOnAwake = false;
+            tickSource.spatialBlend = 0f;
             Generate();
         }
 
@@ -173,6 +177,14 @@ namespace UnderPressure
                                                           + Noise() * Env(t, 0.002f, 0.25f) * 0.3f);
             yoink = Make("yoink", 0.22f, t => Sweep(t, 0.22f, 1200, 300) * Env(t, 0.003f, 0.22f) * 0.35f + Noise() * Env(t, 0.002f, 0.08f) * 0.2f);
 
+            // NES-style score tally blip: a short 25% pulse wave with a fast decay
+            moneyTick = Make("moneyTick", 0.045f, t =>
+            {
+                float ph = t * 1568f; // G6
+                float pulse = (ph - Mathf.Floor(ph)) < 0.25f ? 1f : -1f;
+                return pulse * Mathf.Exp(-t * 70f) * 0.22f;
+            });
+
             // Little monster grunts: "hup!", "hnf!", "hah!" — formant-filtered glottal buzz.
             grunts = new[]
             {
@@ -180,6 +192,14 @@ namespace UnderPressure
                 FromSamples("grunt_hnf", Voice(0.15f, 230f, 170f, new[] { 420f, 900f, 2200f }, 0.6f)),
                 FromSamples("grunt_hah", Voice(0.19f, 270f, 200f, new[] { 800f, 1250f, 2600f }, 0.35f)),
             };
+        }
+
+        /// <summary>The money counter's tick, on its own source so rapid ticks never cut off other sounds.</summary>
+        public static void PlayTick(float volume, float pitch)
+        {
+            if (I == null || I.moneyTick == null) return;
+            I.tickSource.pitch = pitch;
+            I.tickSource.PlayOneShot(I.moneyTick, volume * (Game.Config != null ? Game.Config.sfxVolume : 0.8f));
         }
 
         public static AudioClip RandomGrunt() =>

@@ -30,7 +30,8 @@ namespace UnderPressure
         /// <summary>In the base (lockers, shop, practice board, no clock) rather than a test chamber.</summary>
         public bool InBase { get; private set; }
         public float CurrentGrime { get; private set; }
-        public int Bank { get; set; }
+        /// <summary>LAB FUNDING. Saved between sessions (see Progress.Bank).</summary>
+        public long Bank { get => Progress.Bank; set => Progress.Bank = value; }
         /// <summary>Set by the teleporter: players materialise with sparks when the next level builds.</summary>
         public bool ArrivingByTeleport { get; set; }
         float lastInspectorGrime = -1f;

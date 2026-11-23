@@ -15,7 +15,8 @@ namespace UnderPressure
         public struct Results
         {
             public bool won;
-            public int chamber, distance, goal, loops, earned, wasted, wastedCost, bank;
+            public int chamber, distance, goal, loops, wasted, wastedCost;
+            public long earned, bank;
             public string bonusLine;
             public List<(string title, string who, Color color, string value)> awards;
             public List<Progress.Unlocked> unlocks;
@@ -96,7 +97,7 @@ namespace UnderPressure
             title.color = new Color(0.6f, 1f, 0.9f);
             left.text = "SUBJECTS: <color=#9EF>MONITORED</color>\nCOMPLIANCE: <color=#9EF>EXPECTED</color>\nESCAPE: <color=#F66>IMPOSSIBLE</color>";
             right.text = "";
-            footer.text = $"LAB FUNDING  ${Game.Bootstrap.Bank:N0}";
+            footer.text = $"LAB FUNDING  ${Cash.Hud(Game.Bootstrap.Bank)}";
             status.text = "REC";
         }
 
@@ -144,8 +145,8 @@ namespace UnderPressure
                 }
             right.text = sb.ToString();
             footer.text = r.won
-                ? $"LAB FUNDING  ${r.bank:N0}   ·   stand on a teleporter"
-                : $"LAB FUNDING  ${r.bank:N0}   ·   retry: stand on the teleporter";
+                ? $"LAB FUNDING  ${Cash.Hud(r.bank)}   ·   stand on a teleporter"
+                : $"LAB FUNDING  ${Cash.Hud(r.bank)}   ·   retry: stand on the teleporter";
             status.text = "REVIEW";
         }
 

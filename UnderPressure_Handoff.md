@@ -33,7 +33,7 @@
 
 ### Standing design decisions
 
-- **One shared bank** ("lab funding") for the team. **The bank is not saved between sessions yet** (see the open list).
+- **One shared bank** ("lab funding") for the team, saved between sessions (`up_bank`, a `long`, so up to $9.2 quintillion).
 - **Cosmetics** are earned or found, never bought. **Shop items** use the bank and are bought once for the whole team.
 - **Consumables** (the filter piece) are bought one at a time by whoever presses the button.
 - Lockers are usable any time. The identity floor ring isn't a cosmetic: it's the **player color**.
@@ -220,7 +220,6 @@ Unlocks get a banner and appear on the results monitor (NEW! rows first).
 
 ### Items and economy
 - **Hazmat suit** (planned for chamber 5): −50% toxic slime vulnerability. **Blocked:** toxic slime doesn't hurt yet (a spray only splashes). First design a "sick" state (e.g. slowed, green, hiccupping) from toxic sprays, then the suit halves it. It could also be wearable.
-- **Persist the bank** between sessions. Right now only purchases, unlocks and the deepest chamber are saved.
 - **Balatro-style scaling:** later items like +1000% luck or money, so the 5× backpack prices become reachable.
 - **More luck hooks:** e.g. better belt pieces, a spill grace (one extra pipe), unlock rate. Always show LUCKY! when luck made the difference.
 - **Count Ant and peg leg on the critter:** deliberately skipped for now (Haste-style). The peg leg would replace a leg (one shoe + one peg).
@@ -235,6 +234,8 @@ Unlocks get a banner and appear on the results monitor (NEW! rows first).
 - **Liquid proximity effects** (liquids affecting nearby things) and the "filter split" idea around them.
 
 ### Easter egg
+- **Lab almanac terminal (base):** a clunky lab computer in the shop area where the critters "type up" their mandatory science time logs: lifetime stats, achievements, discoveries. Home for the achievement system below (and the unlocks).
+- **Money tick feel:** the HUD counts every digit with an NES tick (`moneyTickSound`). If it gets annoying in play, try casino-style or juicier sounds, or design a sound for the fast, ramped-up count.
 - **$8,388,608 (2²³), the original Pipe Dream's integer overflow score:** when the bank crosses it, everything starts glitching as if the game broke, then glass shatters like the dimension is breaking, and an achievement/notification appears: **"Escaped the Dream of Pipes"**. Needs a small achievement/notification system.
 
 ### Base and progression

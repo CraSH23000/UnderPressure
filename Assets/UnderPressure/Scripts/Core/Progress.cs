@@ -237,6 +237,29 @@ namespace UnderPressure
             PlayerPrefs.Save();
         }
 
+        const string BankKey = "up_bank";
+        static long? bank;
+
+        /// <summary>
+        /// LAB FUNDING, the team's shared bank. Saved between sessions (as a string: PlayerPrefs has no long).
+        /// Every change is written straight away, so a crash or quit never loses money.
+        /// </summary>
+        public static long Bank
+        {
+            get
+            {
+                if (bank == null) bank = long.TryParse(PlayerPrefs.GetString(BankKey, "0"), out var v) ? v : 0L;
+                return bank.Value;
+            }
+            set
+            {
+                if (bank == value) return;
+                bank = value;
+                PlayerPrefs.SetString(BankKey, value.ToString());
+                PlayerPrefs.Save();
+            }
+        }
+
         public static void ResetAll()
         {
             for (int slot = 0; slot < JoinManager.MaxPlayers; slot++)
@@ -247,6 +270,8 @@ namespace UnderPressure
             }
             PlayerPrefs.DeleteKey(TeamKey(TeamCleanPipes));
             PlayerPrefs.DeleteKey(FurthestKey);
+            PlayerPrefs.DeleteKey(BankKey);
+            bank = null;
             Items.ResetAll(); // bought items too (testing)
             PlayerPrefs.Save();
         }

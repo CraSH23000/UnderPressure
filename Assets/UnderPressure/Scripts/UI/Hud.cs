@@ -11,8 +11,9 @@ namespace UnderPressure
         public float UiScale => canvas != null ? canvas.scaleFactor : 1f;
 
         Canvas canvas;
-        Text money, timer, timerSub, distance, hints;
-        RectTransform moneyGroup, distanceFill, timerRect;
+        Text timer, timerSub, distance, hints;
+        RectTransform distanceFill, timerRect;
+        HoloMoney holoMoney;
         Image distanceFillImg;
         readonly Image[] rings = new Image[JoinManager.MaxPlayers];
         readonly RectTransform[] ringRects = new RectTransform[JoinManager.MaxPlayers];
@@ -30,7 +31,7 @@ namespace UnderPressure
         int guideFrame = -1, promptFrame = -1;
         float punchSlow, punchFast, punchMid;
         Text endTitle, endStats, endPrompt;
-        float moneyPunch, timerPunch, distancePunch;
+        float timerPunch, distancePunch;
         int lastDistance = -1;
 
         static readonly Color Ink = new Color(0.1f, 0.08f, 0.15f, 0.85f);
@@ -47,16 +48,8 @@ namespace UnderPressure
 
             var root = (RectTransform)transform;
 
-            // Money (top-left)
-            moneyGroup = Rect("Money", root, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(40, -30), new Vector2(420, 90));
-            var coin = Rect("Coin", moneyGroup, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(0, 0.5f), Vector2.zero, new Vector2(72, 72));
-            var coinImg = coin.gameObject.AddComponent<Image>();
-            coinImg.sprite = Mats.MakeSprite(Mats.CircleTexture);
-            coinImg.color = Mats.Money;
-            var coinTxt = Rect("$", coin, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-            Popup.MakeText(coinTxt.gameObject, "$", 44, new Color(0.55f, 0.35f, 0.05f));
-            var mt = Rect("Amount", moneyGroup, new Vector2(0, 0), new Vector2(1, 1), new Vector2(0, 0.5f), new Vector2(92, 0), new Vector2(-92, 0));
-            money = Popup.MakeText(mt.gameObject, "0", 64, Color.white, TextAnchor.MiddleLeft);
+            // Money (top-left): EARNINGS + LAB FUNDING hologram, counting digit by digit
+            holoMoney = HoloMoney.Create(root);
 
             // Countdown (top-centre)
             timerRect = Rect("Timer", root, new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -20), new Vector2(700, 90));
@@ -110,7 +103,7 @@ namespace UnderPressure
             // Join prompt (bottom-right) and player roster (under the money)
             var jp = Rect("JoinPrompt", root, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-40, -30), new Vector2(1000, 50));
             joinPrompt = Popup.MakeText(jp.gameObject, "", 26, Color.white, TextAnchor.MiddleRight);
-            var ro = Rect("Roster", root, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(44, -125), new Vector2(700, 50));
+            var ro = Rect("Roster", root, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(44, -160), new Vector2(700, 50));
             roster = Popup.MakeText(ro.gameObject, "", 30, Color.white, TextAnchor.MiddleLeft);
             roster.supportRichText = true;
 
@@ -456,8 +449,7 @@ namespace UnderPressure
 
         // ------------------------------------------------------------------ API
 
-        public void SetMoney(int value) => money.text = value.ToString("N0");
-        public void PunchMoney(float amount = 1f) => moneyPunch = Mathf.Max(moneyPunch, amount);
+        public void PunchMoney(float amount = 1f) => holoMoney?.Punch(amount);
 
         public void SetTimer(string main, string sub, Color color)
         {
@@ -538,10 +530,8 @@ namespace UnderPressure
         void Update()
         {
             float dt = Time.unscaledDeltaTime;
-            moneyPunch = Mathf.MoveTowards(moneyPunch, 0f, dt * 4f);
             timerPunch = Mathf.MoveTowards(timerPunch, 0f, dt * 5f);
             distancePunch = Mathf.MoveTowards(distancePunch, 0f, dt * 4f);
-            moneyGroup.localScale = Vector3.one * (1f + Juice.OutBack(moneyPunch) * 0.25f * moneyPunch);
             timerRect.localScale = Vector3.one * (1f + timerPunch * 0.3f);
             distance.transform.localScale = Vector3.one * (1f + distancePunch * 0.2f);
             if (endPanel.activeSelf)
