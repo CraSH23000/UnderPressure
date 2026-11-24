@@ -6,6 +6,7 @@ namespace UnderPressure
     public class ItemDef
     {
         public string id, name, description;
+        public string effect;        // what it does, in plain words (shown under the flavour text in the details)
         public bool active;          // used with an item button (otherwise passive)
         public string passiveLabel;  // shown instead of a button for passive items, e.g. "ALWAYS ON", "ON DASH"
         public bool hasCharges;
@@ -20,6 +21,7 @@ namespace UnderPressure
         public string requires;      // another item the team must own first (the funnel needs the bottle)
         public bool consumable;      // bought one at a time by whoever presses the button (the filter piece goes into their hands)
         public System.Func<GameConfig, int> everyChamberFrom; // sold in every chamber from this one on (besides its own)
+        public System.Func<GameConfig, int> refillPrice; // once owned, its machine sells refills (everyone back to full charges)
     }
 
     /// <summary>
@@ -35,6 +37,8 @@ namespace UnderPressure
         public const string CrossingSign = "crossing";
         public const string Funnel = "funnel";
         public const string FilterPiece = "filter";
+        public const string SpiderSerum = "serum";
+        public const string Spoon = "spoon";
         public const int Slots = 3;
 
         public static readonly ItemDef[] All =
@@ -59,6 +63,22 @@ namespace UnderPressure
                 description = "It's just a peg leg. Raises the team's luck: every lucky break is a little more likely, and you'll see LUCKY! when it was the foot.",
                 chamber = 0, signText = "LUCK", signColor = new Color(0.3f, 0.85f, 0.35f),
                 basePrice = c => c.pirateFootPrice, priceGrowth = c => 1f, maxLevel = c => 1,
+            },
+            new ItemDef
+            {
+                id = SpiderSerum, name = "SPIDER MONKEY SERUM", active = true, hasCharges = true, icon = "item_serum",
+                description = "Lab-grade monkey business. One dose lasts the whole chamber.",
+                effect = "Climb and vault over pipes just by walking into them, and move along the top at full walking speed.",
+                chamber = 0, signText = "SERUM", signColor = new Color(0.9f, 0.3f, 0.75f),
+                basePrice = c => c.serumPrice, priceGrowth = c => 1f, maxLevel = c => 1, refillPrice = c => c.serumRefillPrice,
+            },
+            new ItemDef
+            {
+                id = Spoon, name = "SPOON", active = false, passiveLabel = "ON DASH", icon = "item_spoon",
+                description = "Pipes aren't real, they can't hurt you.",
+                effect = "Dash through pipes.",
+                chamber = 0, signText = "SPOON", signColor = new Color(0.75f, 0.8f, 0.88f),
+                basePrice = c => c.spoonPrice, priceGrowth = c => 1f, maxLevel = c => 1,
             },
             new ItemDef
             {
@@ -183,7 +203,27 @@ namespace UnderPressure
         public static string BottleMix(int slot) => PlayerPrefs.GetString($"up_bottlemix{slot}", "");
         public static void SetBottleMix(int slot, string mix) { PlayerPrefs.SetString($"up_bottlemix{slot}", mix ?? ""); PlayerPrefs.Save(); }
 
-        public static int MaxCharges(string id) => id == WaterBottle && Cfg != null ? Mathf.Max(1, Cfg.waterBottleCharges) : 1;
+        public static int MaxCharges(string id)
+        {
+            if (Cfg == null) return 1;
+            if (id == WaterBottle) return Mathf.Max(1, Cfg.waterBottleCharges);
+            if (id == SpiderSerum) return Mathf.Max(1, Cfg.serumCharges);
+            return 1;
+        }
+
+        /// <summary>Would a refill do anything? (Someone in the room is short of full charges.)</summary>
+        public static bool NeedsRefill(string id)
+        {
+            foreach (var pl in Game.Players)
+                if (pl != null && Charges(pl.Index, id) < MaxCharges(id)) return true;
+            return false;
+        }
+
+        /// <summary>A refill from the machine: every player slot back to full charges.</summary>
+        public static void RefillForTeam(string id)
+        {
+            for (int s = 0; s < JoinManager.MaxPlayers; s++) SetCharges(s, id, MaxCharges(id));
+        }
 
         /// <summary>The team bought it: every player slot gets a full one, bound to their first free item button.</summary>
         public static void BuyForTeam(string id)

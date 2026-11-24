@@ -13,6 +13,7 @@ namespace UnderPressure
         public const string WaterHops = "waterhops";   // hopped over a pipe full of clean water
         // team stats
         public const string TeamCleanPipes = "cleanpipes"; // pipes filled with clean water, all-time
+        public const string TeamPipeBursts = "pipebursts"; // two streams met head-on and burst a pipe (PIPE BURSTER, later)
 
         struct Lock
         {

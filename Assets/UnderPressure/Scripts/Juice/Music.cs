@@ -28,8 +28,9 @@ namespace UnderPressure
         public void Cut()
         {
             cut = true;
-            baseVol = leadVol = panicVol = 0f;
+            baseVol = leadVol = stemLeadVol = panicVol = 0f;
             foreach (var m in music) m.volume = 0f;
+            foreach (var s in stemSources) s.volume = 0f;
             panicSrc.volume = 0f;
             staticSrc.volume = 0f;
         }
@@ -38,7 +39,7 @@ namespace UnderPressure
 
         AudioSource baseSrc, leadSrc, harmSrc, staticSrc, panicSrc;
         AudioSource[] music;
-        float baseVol, leadVol, panicVol, pitch = 1f, overTime = -1f, tempo = 1f;
+        float baseVol, leadVol, stemLeadVol, panicVol, pitch = 1f, overTime = -1f, tempo = 1f;
         float tempoTarget = 1f, tempoChangeTime;
         bool paused;
 
@@ -123,12 +124,14 @@ namespace UnderPressure
             float leadMix = cfg != null ? cfg.musicLeadVolume : 0.7f;
             float harmMix = cfg != null ? cfg.musicHarmonyVolume : 0.5f;
             float dt = Time.unscaledDeltaTime;
+            SyncStems(cfg);
 
             bool shouldPause = gm != null && gm.Paused;
             if (shouldPause != paused)
             {
                 paused = shouldPause;
                 foreach (var m in music) { if (paused) m.Pause(); else m.UnPause(); }
+                foreach (var s in stemSources) { if (paused) s.Pause(); else s.UnPause(); }
                 if (paused) { staticSrc.Pause(); panicSrc.Pause(); } else { staticSrc.UnPause(); panicSrc.UnPause(); }
             }
             if (paused || cut) return;
@@ -181,8 +184,14 @@ namespace UnderPressure
                 }
             }
 
+            // lead stems (vocals): either the melody's role, or only off the clock and at the base
+            bool leadInChambers = cfg == null || cfg.musicStemLeadInChambers;
+            bool offClock = gm != null && gm.IsOver && !tapeStop;
+            float targetStemLead = leadInChambers ? targetLead : offClock ? targetBase : 0f;
+
             // panic swaps in fast; everything else drifts
             bool swapping = panic || panicVol > 0.01f;
+            stemLeadVol = Mathf.MoveTowards(stemLeadVol, targetStemLead, dt * (swapping || tapeStop ? 3f : 0.6f));
             if (panic && panicVol < 0.01f) panicSrc.timeSamples = 0; // start the alarm loop from the top
             baseVol = Mathf.MoveTowards(baseVol, targetBase, dt * (swapping ? 3f : 0.8f));
             leadVol = Mathf.MoveTowards(leadVol, targetLead, dt * (swapping ? 3f : 0.6f));
@@ -206,9 +215,11 @@ namespace UnderPressure
             else staticBurst = 0f;
 
             float p = pitch * vhsPitch * tempo;
-            baseSrc.volume = baseVol * master * vhsGain;
-            leadSrc.volume = leadVol * leadMix * master * vhsGain;
-            harmSrc.volume = leadVol * harmMix * master * vhsGain;
+            float synthGain = StemsOn ? 0f : master * vhsGain;
+            baseSrc.volume = baseVol * synthGain;
+            leadSrc.volume = leadVol * leadMix * synthGain;
+            harmSrc.volume = leadVol * harmMix * synthGain;
+            if (StemsOn) UpdateStems(dt, master * vhsGain, leadMix, p);
             // pitch and speed of the normal music are baked into its clips (see ReadRenderSettings)
             foreach (var m in music) m.pitch = p;
             CheckRerender();
@@ -257,7 +268,7 @@ namespace UnderPressure
             if (nextSkip <= 0f && v > 0.25f && stutterLeft == 0)
             {
                 stutterLeft = 1 + vrng.Next(3);
-                stutterPos = panicVol > 0.5f ? panicSrc.timeSamples : baseSrc.timeSamples;
+                stutterPos = panicVol > 0.5f ? panicSrc.timeSamples : (StemsOn ? stemClock : baseSrc).timeSamples;
                 stutterTimer = 0.07f + R() * 0.07f;
                 nextSkip = Mathf.Lerp(26f, 5f, v) * (0.5f + R());
             }
@@ -267,12 +278,152 @@ namespace UnderPressure
                 if (stutterTimer <= 0f)
                 {
                     if (panicVol > 0.5f) panicSrc.timeSamples = Mathf.Clamp(stutterPos, 0, panicSrc.clip.samples - 1);
-                    else foreach (var m in music) m.timeSamples = Mathf.Clamp(stutterPos, 0, m.clip.samples - 1);
+                    else foreach (var m in StemsOn ? stemSources : (IEnumerable<AudioSource>)music) m.timeSamples = Mathf.Clamp(stutterPos, 0, m.clip.samples - 1);
                     stutterLeft--;
                     stutterTimer = 0.07f + R() * 0.07f;
                     staticBurst = Mathf.Max(staticBurst, 0.7f);
                 }
             }
+        }
+
+        // =================================================================== recorded stems (musicRealAudio)
+        // Every variant of every layer plays at once, looped and started on the same DSP tick, so they stay
+        // sample-locked through pitch changes (valve tempo, VHS wow, tape stop) and skips. Only the chosen
+        // variant of each layer is audible; when the loop comes round, the non-fixed layers re-roll.
+
+        class StemLayer
+        {
+            public string name;
+            public bool lead, fixedPick;
+            public AudioSource[] variants;
+            public float[] weight;
+            public int current;
+        }
+        readonly List<StemLayer> stems = new List<StemLayer>();
+        readonly List<AudioSource> stemSources = new List<AudioSource>();
+        AudioSource stemClock;   // the source the loop point is measured on (a fixed layer, i.e. the drums)
+        string stemKey;          // what's loaded: song + layer roles (null = nothing)
+        int stemLastSample;
+        bool StemsOn => stemClock != null;
+
+        /// <summary>Loads, swaps or drops the stems to match the config (also live, when it's changed in play).</summary>
+        void SyncStems(GameConfig cfg)
+        {
+            bool want = cfg != null && cfg.musicRealAudio && !string.IsNullOrEmpty(cfg.musicSong);
+            string key = want ? cfg.musicSong + "|" + cfg.musicStemLeadLayers + "|" + cfg.musicStemFixedLayers : null;
+            if (key == stemKey) return;
+            UnloadStems();
+            stemKey = key;
+            if (want) LoadStems(cfg);
+        }
+
+        static HashSet<string> LayerList(string csv)
+        {
+            var set = new HashSet<string>();
+            if (string.IsNullOrEmpty(csv)) return set;
+            foreach (var part in csv.Split(',')) { var t = part.Trim().ToLowerInvariant(); if (t.Length > 0) set.Add(t); }
+            return set;
+        }
+
+        void LoadStems(GameConfig cfg)
+        {
+            string folder = "Songs/" + cfg.musicSong;
+            var lead = LayerList(cfg.musicStemLeadLayers);
+            var fixedLayers = LayerList(cfg.musicStemFixedLayers);
+            var groups = new SortedDictionary<string, List<AudioClip>>();
+            foreach (var clip in Resources.LoadAll<AudioClip>(folder))
+            {
+                int us = clip.name.IndexOf('_');
+                if (us <= 0) { Resources.UnloadAsset(clip); continue; } // full mixes and anything not named layer_variant
+                string layer = clip.name.Substring(0, us).ToLowerInvariant();
+                if (!groups.TryGetValue(layer, out var list)) groups[layer] = list = new List<AudioClip>();
+                list.Add(clip);
+            }
+            if (groups.Count == 0)
+            {
+                Debug.LogWarning($"Music: no stems (layer_variant.wav) in Resources/{folder}; using the synth music.");
+                return;
+            }
+
+            double start = AudioSettings.dspTime + 0.2;
+            foreach (var g in groups)
+            {
+                g.Value.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+                var layer = new StemLayer
+                {
+                    name = g.Key,
+                    lead = lead.Contains(g.Key),
+                    fixedPick = fixedLayers.Contains(g.Key),
+                    variants = new AudioSource[g.Value.Count],
+                    weight = new float[g.Value.Count],
+                };
+                for (int i = 0; i < g.Value.Count; i++)
+                {
+                    var s = MakeSource(g.Value[i]);
+                    s.PlayScheduled(start);
+                    if (paused) s.Pause();
+                    layer.variants[i] = s;
+                    stemSources.Add(s);
+                }
+                layer.current = UnityEngine.Random.Range(0, layer.variants.Length);
+                layer.weight[layer.current] = 1f;
+                stems.Add(layer);
+                if (stemClock == null && layer.fixedPick) stemClock = layer.variants[layer.current];
+            }
+            if (stemClock == null) stemClock = stems[0].variants[0];
+            stemLastSample = 0;
+
+            int len = stemClock.clip.samples;
+            foreach (var s in stemSources)
+                if (s.clip.samples != len)
+                    Debug.LogWarning($"Music: {s.clip.name} is {s.clip.samples} samples but {stemClock.clip.name} is {len}. Stems must be the same length to stay in sync.");
+        }
+
+        void UnloadStems()
+        {
+            foreach (var s in stemSources)
+            {
+                var clip = s.clip;
+                s.Stop();
+                Destroy(s);
+                if (clip != null) Resources.UnloadAsset(clip);
+            }
+            stemSources.Clear();
+            stems.Clear();
+            stemClock = null;
+            stemKey = null;
+        }
+
+        void UpdateStems(float dt, float gain, float leadMix, float pitch)
+        {
+            int pos = stemClock.timeSamples;
+            bool looped = pos < stemLastSample - stemClock.clip.samples / 2; // jumped back more than half: the loop came round
+            stemLastSample = pos;
+            foreach (var layer in stems)
+            {
+                if (looped && !layer.fixedPick) layer.current = PickVariant(layer);
+                float role = layer.lead ? stemLeadVol * leadMix : baseVol;
+                for (int i = 0; i < layer.variants.Length; i++)
+                {
+                    // a fast crossfade (~40 ms) so the swap at the loop point doesn't click
+                    layer.weight[i] = Mathf.MoveTowards(layer.weight[i], i == layer.current ? 1f : 0f, dt * 25f);
+                    var s = layer.variants[i];
+                    s.volume = layer.weight[i] * role * gain;
+                    s.pitch = pitch;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Which variant of a layer plays the next time round. Random for now (never the same one twice in a row);
+        /// this is where labels (busy, grimy, calm...) will steer the choice by game state.
+        /// </summary>
+        int PickVariant(StemLayer layer)
+        {
+            int n = layer.variants.Length;
+            if (n <= 1) return 0;
+            int k = UnityEngine.Random.Range(0, n - 1);
+            return k >= layer.current ? k + 1 : k;
         }
 
         /// <summary>Tape hiss with pops and crackle, looped under the music when grime is up.</summary>

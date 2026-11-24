@@ -31,11 +31,13 @@ namespace UnderPressure
         [NonSerialized] public float StealProtectedUntil;
 
         BoxCollider col;
+        readonly List<BoxCollider> shape = new List<BoxCollider>(); // placed: blocks along the tube only
         float S;
         bool flying;
         bool highlighted;
         float wiggle;
         readonly HashSet<Dir> joinedLocal = new HashSet<Dir>();
+        readonly HashSet<Dir> blownOpenings = new HashSet<Dir>(); // a burst blew these openings away (no clamps)
         Material plateMat;
 
         static Material highlightMat;
@@ -94,9 +96,21 @@ namespace UnderPressure
                     Spring.SetBase(0.58f);
                     break;
                 case PieceState.Placed:
-                    Body.isKinematic = true; col.enabled = true; gameObject.layer = Type == PipeType.Cross ? Layers.PlacedWalkable : Layers.PlacedPipes;
-                    col.size = new Vector3(0.94f * S, TopHeight + 0.05f, 0.94f * S);
-                    col.center = new Vector3(0, (TopHeight + 0.05f) * 0.5f, 0);
+                    Body.isKinematic = true; gameObject.layer = Type == PipeType.Cross ? Layers.PlacedWalkable : Layers.PlacedPipes;
+                    if (Type == PipeType.Cross)
+                    {
+                        // crosses are walked over anyway: one box for the whole tile (loose pieces still land on it)
+                        col.enabled = true;
+                        col.size = new Vector3(0.94f * S, TopHeight + 0.05f, 0.94f * S);
+                        col.center = new Vector3(0, (TopHeight + 0.05f) * 0.5f, 0);
+                    }
+                    else
+                    {
+                        // only the tube blocks: the bare plate around it is free to walk on
+                        col.enabled = false;
+                        EnsureShape();
+                        SetShape(true, gameObject.layer);
+                    }
                     Spring.SetBase(1f);
                     break;
                 case PieceState.Loose:
@@ -112,12 +126,118 @@ namespace UnderPressure
                     Body.isKinematic = true; col.enabled = false;
                     break;
             }
-            if (s != PieceState.Placed) { Connected = false; joinedLocal.Clear(); }
+            if (s != PieceState.Placed) { Connected = false; joinedLocal.Clear(); SetShape(false, gameObject.layer); }
             RefreshAttachments(false);
             ClearHighlights();
         }
 
         public void SetCell(Vector2Int c) => Cell = c;
+
+        // ------------------------------------------------------------------ collision shape
+
+        /// <summary>Half-width of what blocks: the tube plus its flanges and clamps.</summary>
+        float ShapeHalfWidth => PipeBuilder.TubeRadius(S) * 1.4f;
+
+        /// <summary>
+        /// Placed pipes block along their tube only, as a chain of boxes following each channel's path (and the
+        /// filter's canister), so critters can walk across the bare plate, e.g. around the inside of a corner.
+        /// Built once, on first install; children of the root so they rotate with the piece but not with its springs.
+        /// </summary>
+        void EnsureShape()
+        {
+            if (shape.Count > 0) return;
+            float half = ShapeHalfWidth, top = TopHeight + 0.05f;
+            float overlap = half * 0.3f, inset = 0.03f * S; // overlap at bends; stay inside the tile like the old 0.94 box
+            var root = new GameObject("Shape").transform;
+            root.SetParent(transform, false);
+            foreach (var ch in Model.channels)
+            {
+                var pts = ch.points;
+                int n = pts.Length - 1;
+                for (int i = 0; i < n; i++)
+                {
+                    Vector3 a = pts[i], b = pts[i + 1];
+                    a.y = b.y = 0f;
+                    Vector3 d = b - a;
+                    float len = d.magnitude;
+                    if (len < 1e-4f) continue;
+                    Vector3 dir = d / len;
+                    a += i == 0 ? dir * inset : -dir * overlap;
+                    b += i == n - 1 ? -dir * inset : dir * overlap;
+                    shape.Add(ShapeBox(root, (a + b) * 0.5f, Quaternion.LookRotation(dir, Vector3.up), new Vector3(half * 2f, top, (b - a).magnitude)));
+                }
+            }
+            if (Type == PipeType.Filter)
+            {
+                float cr = PipeBuilder.CanisterRadius(S) * 1.1f;
+                shape.Add(ShapeBox(root, Vector3.zero, Quaternion.identity, new Vector3(cr * 2f, top, cr * 2f)));
+            }
+        }
+
+        static BoxCollider ShapeBox(Transform root, Vector3 groundCenter, Quaternion rot, Vector3 size)
+        {
+            var go = new GameObject("Block");
+            go.transform.SetParent(root, false);
+            go.transform.localPosition = groundCenter + Vector3.up * size.y * 0.5f;
+            go.transform.localRotation = rot;
+            var bc = go.AddComponent<BoxCollider>();
+            bc.size = size;
+            bc.enabled = false;
+            return bc;
+        }
+
+        void SetShape(bool on, int layer)
+        {
+            foreach (var c in shape) { c.gameObject.layer = layer; c.enabled = on; }
+        }
+
+        /// <summary>
+        /// Would a critter of this radius at worldPos overlap this piece's tube, once it's installed at cellCenter?
+        /// Worked out from the paths rather than the colliders, because a freshly placed piece is still flying in.
+        /// Crosses count as the whole tile.
+        /// </summary>
+        public bool FootprintHits(Vector3 cellCenter, Vector3 worldPos, float radius)
+        {
+            if (Type == PipeType.Cross) return true;
+            Vector3 p = Quaternion.Inverse(TargetRotation) * (worldPos - cellCenter);
+            p.y = 0f;
+            if (Type == PipeType.Filter && p.magnitude < PipeBuilder.CanisterRadius(S) * 1.1f + radius) return true;
+            return ClosestOnTube(p, out _) < ShapeHalfWidth + radius;
+        }
+
+        /// <summary>The point on top of the tube (on the ground plane) nearest to worldPos: where a climber should land.</summary>
+        public Vector3 NearestTubePoint(Vector3 worldPos)
+        {
+            Vector3 c = transform.position;
+            Vector3 p = Quaternion.Inverse(TargetRotation) * (worldPos - c);
+            p.y = 0f;
+            ClosestOnTube(p, out var q);
+            Vector3 w = c + TargetRotation * q;
+            w.y = worldPos.y;
+            return w;
+        }
+
+        /// <summary>Distance (in the piece's local ground plane) from p to the nearest point on any channel's path.</summary>
+        float ClosestOnTube(Vector3 p, out Vector3 closest)
+        {
+            float best = float.MaxValue;
+            closest = Vector3.zero;
+            foreach (var ch in Model.channels)
+            {
+                var pts = ch.points;
+                for (int i = 0; i < pts.Length - 1; i++)
+                {
+                    Vector3 a = pts[i], b = pts[i + 1];
+                    a.y = b.y = 0f;
+                    Vector3 ab = b - a;
+                    float t = ab.sqrMagnitude < 1e-8f ? 0f : Mathf.Clamp01(Vector3.Dot(p - a, ab) / ab.sqrMagnitude);
+                    Vector3 q = a + ab * t;
+                    float d = (q - p).magnitude;
+                    if (d < best) { best = d; closest = q; }
+                }
+            }
+            return best;
+        }
 
         public void Rotate(int delta)
         {
@@ -179,6 +299,158 @@ namespace UnderPressure
             }
         }
 
+        static Material FillMatFor(LiquidGrade grade, float f)
+        {
+            bool tinted = !(grade.Plain && grade.water == Progress.LiquidIsWater);
+            int lvl = Mathf.RoundToInt(Mathf.Clamp01(f) * (Mats.FillLevels - 1));
+            return tinted ? Mats.FillMatFor(grade.Color, grade.Glow, lvl) : Mats.FillMat(lvl);
+        }
+
+        /// <summary>Two streams filling one channel from opposite ends: 'fromA' of it from the a end, 'fromB' from the b end.</summary>
+        public void SetChannelFillTwoWay(int index, float fromA, float fromB, LiquidGrade gradeA, LiquidGrade gradeB)
+        {
+            var ch = Model.channels[index];
+            ch.fill = Mathf.Clamp01(fromA + fromB);
+            int n = ch.segments.Length;
+            for (int j = 0; j < n; j++)
+            {
+                float fa = Mathf.Clamp01(fromA * n - j);
+                float fb = Mathf.Clamp01(fromB * n - (n - 1 - j));
+                var mat = fa >= fb ? FillMatFor(gradeA, fa) : FillMatFor(gradeB, fb);
+                foreach (var r in ch.segments[j])
+                    if (r.sharedMaterial != mat) r.sharedMaterial = mat;
+            }
+        }
+
+        /// <summary>
+        /// The channel bursts at 'atFromA' (0 = its a end, 1 = its b end): the tube there is blown away and the two
+        /// torn ends peel back in strips. Each end takes the color of the stream that filled it.
+        /// </summary>
+        public void BurstChannel(int index, float atFromA, LiquidGrade gradeA, LiquidGrade gradeB)
+        {
+            var ch = Model.channels[index];
+            int n = ch.segments.Length;
+            // blow away the segment at the tear plus its nearer neighbour (one, at the very ends)
+            float u = Mathf.Clamp01(atFromA) * n;
+            int j0 = Mathf.Clamp(Mathf.FloorToInt(u), 0, n - 1);
+            int j1 = Mathf.Clamp(u - j0 >= 0.5f ? j0 + 1 : j0 - 1, 0, n - 1);
+            int lo = Mathf.Min(j0, j1), hi = Mathf.Max(j0, j1);
+            for (int j = lo; j <= hi; j++)
+                foreach (var r in ch.segments[j]) r.enabled = false;
+
+            float r0 = PipeBuilder.TubeRadius(S);
+            // torn end on the a side: points[lo], facing on along the path; on the b side: points[hi + 1], facing back
+            Vector3 pa = ch.points[lo], fwd = (ch.points[Mathf.Min(lo + 1, n)] - ch.points[Mathf.Max(lo - 1, 0)]).normalized;
+            var outerA = FillMatFor(gradeA, 1f);
+            TornEnd.Spawn(Model.root, pa, fwd, r0, outerA, InsideOf(outerA), index * 31 + 1);
+            Vector3 pb = ch.points[hi + 1], back = (ch.points[hi] - ch.points[Mathf.Min(hi + 2, n)]).normalized;
+            var outerB = FillMatFor(gradeB, 1f);
+            TornEnd.Spawn(Model.root, pb, back, r0, outerB, InsideOf(outerB), index * 31 + 2);
+            AddInnerWalls(ch, lo, hi, outerA, outerB);
+
+            // a cross bursting underneath takes its bridge with it (the tear would be hidden under the arch otherwise):
+            // the arch is gone, leaving two torn stubs on the flanges
+            if (Type == PipeType.Cross && index == 0 && Model.channels.Count > 1) BlowAwayBridge(Model.channels[1], r0);
+        }
+
+        /// <summary>World position of the middle of a filter's canister, at tube height.</summary>
+        public Vector3 CanisterPoint => Model.root.TransformPoint(new Vector3(0f, PipeBuilder.TubeHeight(S), 0f));
+
+        /// <summary>
+        /// A filter fed two liquids: the glass canister shatters (a jagged stump stays, shards fly), the cap and its
+        /// handle pop off and clatter to the floor, and the soaked cartridge is left standing.
+        /// </summary>
+        public void ShatterCanister()
+        {
+            var glass = Model.root.Find("CanisterGlass");
+            if (glass == null) return;
+            float cr = PipeBuilder.CanisterRadius(S), h = PipeBuilder.TubeHeight(S), r = PipeBuilder.TubeRadius(S);
+            float bottom = 0.05f, top = h + r + 0.16f * S, len = top - bottom;
+            var glassMat = glass.GetComponent<Renderer>().sharedMaterial;
+            glass.gameObject.SetActive(false);
+            GlassShatter.Stump(Model.root, Vector3.zero, cr, bottom, len * 0.12f, len * 0.5f, glassMat);
+
+            var sparkle = Mats.Lit(new Color(0.85f, 0.95f, 1f), 0.95f, 0.2f, new Color(0.3f, 0.4f, 0.5f));
+            Vector3 c = Model.root.TransformPoint(Vector3.zero);
+            float scale = Model.root.lossyScale.x;
+            GlassShatter.Shards(c, cr * scale, (bottom + len * 0.3f) * scale, top * scale, 14, sparkle);
+
+            // the cap (and its handle) blow off together
+            var cap = Model.root.Find("CapTop");
+            var handle = Model.root.Find("Handle");
+            if (cap != null)
+            {
+                var popped = new GameObject("PoppedCap").transform;
+                if (Game.LevelRoot != null) popped.SetParent(Game.LevelRoot, false);
+                popped.position = cap.position;
+                cap.SetParent(popped, true);
+                if (handle != null) handle.SetParent(popped, true);
+                Vector2 side = UnityEngine.Random.insideUnitCircle.normalized;
+                Tossed.Launch(popped.gameObject, new Vector3(side.x, 0f, side.y) * UnityEngine.Random.Range(1f, 2f) + Vector3.up * 7f,
+                    new Vector3(UnityEngine.Random.Range(-500f, 500f), UnityEngine.Random.Range(-200f, 200f), UnityEngine.Random.Range(-500f, 500f)), 0.03f * scale, false);
+            }
+        }
+
+        /// <summary>The whole arch goes: tube, flanges, mouths and clamps at both of its openings.</summary>
+        void BlowAwayBridge(PipeChannel bridge, float r0)
+        {
+            foreach (var seg in bridge.segments)
+                foreach (var r in seg) r.enabled = false;
+            foreach (var d in new[] { bridge.a, bridge.b })
+            {
+                blownOpenings.Add(d);
+                if (Model.openingParts.TryGetValue(d, out var parts))
+                    foreach (var go in parts) go.SetActive(false);
+                if (Model.clamps.TryGetValue(d, out var clamp)) clamp.gameObject.SetActive(false);
+            }
+        }
+
+        /// <summary>
+        /// The tube is single-sided, so looking into a torn end showed whatever was behind it. Give every tube
+        /// segment still standing in the burst channel an inner wall (a copy facing inward) in the inside color.
+        /// </summary>
+        void AddInnerWalls(PipeChannel ch, int lo, int hi, Material outerA, Material outerB)
+        {
+            for (int j = 0; j < ch.segments.Length; j++)
+            {
+                if (j >= lo && j <= hi) continue;
+                var inside = InsideOf(j < lo ? outerA : outerB);
+                foreach (var r in ch.segments[j])
+                {
+                    var mf = r.GetComponent<MeshFilter>();
+                    if (mf == null || mf.sharedMesh == null) continue;
+                    var go = new GameObject("InnerWall");
+                    go.transform.SetParent(r.transform, false);
+                    go.AddComponent<MeshFilter>().sharedMesh = InsideOut(mf.sharedMesh);
+                    go.AddComponent<MeshRenderer>().sharedMaterial = inside;
+                }
+            }
+        }
+
+        static readonly Dictionary<Mesh, Mesh> insideOut = new Dictionary<Mesh, Mesh>();
+
+        /// <summary>The same surface facing the other way: triangles reversed, normals flipped (cached per mesh).</summary>
+        static Mesh InsideOut(Mesh m)
+        {
+            if (insideOut.TryGetValue(m, out var cached) && cached != null) return cached;
+            var tris = m.triangles;
+            for (int i = 0; i < tris.Length; i += 3) { int t = tris[i + 1]; tris[i + 1] = tris[i + 2]; tris[i + 2] = t; }
+            var norms = m.normals;
+            for (int i = 0; i < norms.Length; i++) norms[i] = -norms[i];
+            var inv = new Mesh { name = m.name + "_Inside", vertices = m.vertices, normals = norms, triangles = tris };
+            inv.RecalculateBounds();
+            insideOut[m] = inv;
+            return inv;
+        }
+
+        /// <summary>The inside of a torn tube: the outside's color, darker and wet-glossy (pure black read as a hole).</summary>
+        static Material InsideOf(Material outer)
+        {
+            Color c = outer != null && outer.HasProperty("_BaseColor") ? outer.GetColor("_BaseColor") : Mats.PipeBody;
+            Color e = outer != null && outer.IsKeywordEnabled("_EMISSION") ? outer.GetColor("_EmissionColor") : Color.black;
+            return Mats.Lit(Color.Lerp(c, Color.black, 0.35f), 0.9f, 0f, e * 0.6f);
+        }
+
         public Vector3 ChannelPoint(int index, float fill, bool fromA)
         {
             var ch = Model.channels[index];
@@ -208,7 +480,8 @@ namespace UnderPressure
             bool placed = State == PieceState.Placed;
             bool showStaples = placed && !Connected;
             foreach (var st in Model.staples) ShowPart(st, showStaples, animate, true);
-            foreach (var kv in Model.clamps) ShowPart(kv.Value, placed && Connected && joinedLocal.Contains(kv.Key), animate, false);
+            foreach (var kv in Model.clamps)
+                ShowPart(kv.Value, placed && Connected && joinedLocal.Contains(kv.Key) && !blownOpenings.Contains(kv.Key), animate, false);
         }
 
         static void ShowPart(Transform t, bool show, bool animate, bool isStaple)

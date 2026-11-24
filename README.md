@@ -32,7 +32,7 @@ Nobody is in the level until someone joins. Press your join button at any time t
 
 | | Gamepad | Keyboard: WASD side | Keyboard: Arrows side |
 |---|---|---|---|
-| **Join** | A or X | Space or E | Enter or Right Ctrl |
+| **Join** | A, X or Start | Space or E | Enter or Right Ctrl |
 | Move | Left stick / D-pad | WASD | Arrow keys |
 | Jump | A | Space | Right Ctrl |
 | Use: grab · place · steal · **hold** to unscrew/swap | X | E | Enter |

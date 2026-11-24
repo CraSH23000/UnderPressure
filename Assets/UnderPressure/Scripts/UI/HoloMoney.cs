@@ -135,9 +135,11 @@ namespace UnderPressure
             var speaker = tf > 0 ? fund : te > 0 ? earn : null;
             if (speaker != null && cfg.moneyTickSound)
             {
-                float pitch = 1f + Mathf.Min(1.2f, 0.2f * Mathf.Log10((float)speaker.step));
-                if (speaker.dir < 0) pitch *= 0.75f;
-                Sfx.PlayTick(cfg.moneyTickVolume, pitch);
+                // gaining climbs in pitch as the count speeds up; spending sinks
+                float ramp = Mathf.Log10((float)speaker.step);
+                bool spending = speaker.dir < 0;
+                float pitch = spending ? 1f - Mathf.Min(0.45f, 0.12f * ramp) : 1f + Mathf.Min(1.2f, 0.2f * ramp);
+                Sfx.PlayTick(cfg.moneyTickVolume, pitch, spending);
             }
 
             Animate(Time.unscaledDeltaTime, lost);

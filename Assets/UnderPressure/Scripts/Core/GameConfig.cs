@@ -4,14 +4,23 @@ namespace UnderPressure
 {
     public enum PipeType { Straight, Corner, Cross, Filter }
 
-    /// <summary>What's flowing through the pipes. Chosen per chamber: the last entry whose fromChamber has been reached.</summary>
+    /// <summary>
+    /// A liquid. Chamber liquids are chosen per chamber (the last entry whose fromChamber has been reached); entries
+    /// with fromChamber 0 never come out of a spout and only exist as what a filter turns something into.
+    /// </summary>
     [System.Serializable]
     public class LiquidType
     {
+        [Tooltip("Shown on the spout and the filter labels. A name with WATER in it counts as water (sprays, bottles).")]
         public string name = "CLEAN WATER";
+        [Tooltip("First chamber that pumps this liquid. 0 = never from a spout (only made by filtering).")]
         public int fromChamber = 1;
         public Color color = new Color(0.55f, 0.85f, 1f);
         [ColorUsage(false, true)] public Color glow = new Color(0.25f, 0.6f, 1.2f);
+        [Tooltip("What a filter's purified (clockwise) outlet turns this into: another entry's name, or 'NAME+' for an endless chain. Blank = generic water, one grade purer.")]
+        public string purifiesTo = "";
+        [Tooltip("What a filter's other outlet turns this into: another entry's name. End it in '+' for an endless chain: \"TOXIC SLIME+\" gives TOXIC SLIME+, ++, +++, +4... Blank = stays as it is.")]
+        public string concentratesTo = "";
     }
 
     /// <summary>
@@ -150,9 +159,19 @@ namespace UnderPressure
         public float crossingSignBoost = 0.25f;
         [Tooltip("Filter piece: price of one (it goes straight into the buyer's hands), and the chamber its machine first appears in (then every chamber after).")]
         public int filterPrice = 400;
+        [Tooltip("Price of the Spider Monkey Serum (base), paid once from the shared bank (everyone gets one).")]
+        public int serumPrice = 1800;
+        [Tooltip("Doses per serum. Each dose lasts a whole chamber.")]
+        public int serumCharges = 4;
+        [Tooltip("Once owned, the serum machine sells refills: everyone back to full doses for this much.")]
+        public int serumRefillPrice = 500;
+        [Tooltip("Price of the Spoon (base): dashes go through pipes.")]
+        public int spoonPrice = 2500;
         public int filterFromChamber = 4;
-        [Tooltip("Each filter grade (purer water / more concentrated slime) makes a filled pipe pay this much more (0.5 = +50% per grade).")]
+        [Tooltip("Every filter a stream has been through makes its pipes pay this much more (0.5 = +50% per filter), whichever way the filter took it: filtering is a risk, so it always pays.")]
         public float filterGradeBonus = 0.5f;
+        [Tooltip("On top of that, a filtered stream pays this much more per step it sits away from water in the liquid links (each '+' is a step). Unfiltered spout liquid pays the plain rate.")]
+        public float filterDistanceBonus = 0.25f;
         [Tooltip("Inventory panel width, in HUD units (the HUD is 1920 wide at 1080p).")]
         public float inventoryWidth = 860f;
         [Tooltip("Height of each item row in the inventory.")]
@@ -176,22 +195,33 @@ namespace UnderPressure
         [Tooltip("Falling in the pit at the base is free.")]
         public bool freePitInBase = true;
         [Tooltip("Vending machines in a row on the base's back wall: the first sells water bottles, the rest are OUT OF ORDER until there's something to put in them.")]
-        public int baseVendingMachines = 4;
+        public int baseVendingMachines = 6;
 
         [Header("Chambers & liquids")]
         [Tooltip("Grime added each time you teleport to the next chamber (the lab slowly falls apart).")]
         public float grimePerChamber = 0.2f;
         [Tooltip("Seconds everyone must stay on teleporters before one is picked.")]
         public float readyCountdownSeconds = 3f;
-        [Tooltip("The lab's liquid gets worse as you go deeper. Each chamber uses the last entry whose 'fromChamber' it has reached.")]
+        [Tooltip("Every liquid. The lab's gets worse as you go deeper: each chamber uses the last entry whose 'fromChamber' it has reached. Entries with fromChamber 0 are only made by filters (see purifiesTo / concentratesTo).")]
         public LiquidType[] liquids =
         {
-            new LiquidType { name = "CLEAN WATER",  fromChamber = 1, color = new Color(0.55f, 0.85f, 1f),  glow = new Color(0.25f, 0.6f, 1.3f) },
-            new LiquidType { name = "TAP WATER?",   fromChamber = 3, color = new Color(0.5f, 0.8f, 0.72f), glow = new Color(0.25f, 0.7f, 0.6f) },
-            new LiquidType { name = "TOXIC SLIME",  fromChamber = 4, color = new Color(0.25f, 1f, 0.45f),  glow = new Color(0.3f, 2.2f, 0.7f) },
-            new LiquidType { name = "IRRADIATED",   fromChamber = 6, color = new Color(0.75f, 1f, 0.15f),  glow = new Color(1.8f, 3.2f, 0.3f) },
-            new LiquidType { name = "VOID",         fromChamber = 8, color = new Color(0.03f, 0.02f, 0.05f), glow = new Color(0.55f, 0.15f, 1.1f) },
+            new LiquidType { name = "CLEAN WATER",  fromChamber = 1, color = new Color(0.55f, 0.85f, 1f),  glow = new Color(0.25f, 0.6f, 1.3f), purifiesTo = "FILTERED WATER" },
+            new LiquidType { name = "TAP WATER?",   fromChamber = 3, color = new Color(0.5f, 0.8f, 0.72f), glow = new Color(0.25f, 0.7f, 0.6f), purifiesTo = "FILTERED WATER" },
+            new LiquidType { name = "TOXIC SLIME",  fromChamber = 4, color = new Color(0.25f, 1f, 0.45f),  glow = new Color(0.3f, 2.2f, 0.7f), purifiesTo = "FILTERED WATER" },
+            new LiquidType { name = "IRRADIATED",   fromChamber = 6, color = new Color(0.75f, 1f, 0.15f),  glow = new Color(1.8f, 3.2f, 0.3f), purifiesTo = "FILTERED WATER" },
+            new LiquidType { name = "VOID",         fromChamber = 8, color = new Color(0.03f, 0.02f, 0.05f), glow = new Color(0.55f, 0.15f, 1.1f), purifiesTo = "FILTERED WATER" },
+            new LiquidType { name = "FILTERED WATER",  fromChamber = 0, color = new Color(0.58f, 0.82f, 1f), glow = new Color(0.52f, 0.74f, 0.9f), purifiesTo = "PURE WATER" },
+            new LiquidType { name = "PURE WATER",      fromChamber = 0, color = new Color(0.72f, 0.9f, 1f),  glow = new Color(1f, 1.26f, 1.4f),    purifiesTo = "DEIONIZED WATER" },
+            new LiquidType { name = "DEIONIZED WATER", fromChamber = 0, color = new Color(0.85f, 0.97f, 1f), glow = new Color(1.62f, 1.84f, 1.9f) },
         };
+
+        [Header("Holograms")]
+        [Range(0.5f, 2f)] [Tooltip("Size of the hologram over the spout (countdown, liquid name, flow and pay).")]
+        public float spoutHologramScale = 1.15f;
+        [Range(0.5f, 2f)] [Tooltip("Size of the labels over a filter's outlets.")]
+        public float filterLabelScale = 1f;
+        [Tooltip("Show the pay multiplier (x1.5) after the liquid's name on the filter's outlet labels.")]
+        public bool filterLabelShowsMultiplier = false;
 
         [Header("Camera")]
         [Range(20f, 89f)] [Tooltip("Camera tilt during a round. Lower = more horizontal, shows more of the back wall.")]
@@ -245,6 +275,16 @@ namespace UnderPressure
         public float musicSpeed = 0.84f;
         [Range(0f, 2f)] [Tooltip("Panic loop loudness relative to the rest of the music.")]
         public float musicPanicVolume = 1.4f;
+        [Tooltip("Play recorded stems from Resources/Songs/<musicSong> instead of the code-built synth music. Files are named layer_variant (drums_008, bass_005, ...); files without an underscore (full mixes) are ignored. All stems of a song must be the same length. musicPitchSemitones and musicSpeed don't apply; the panic loop is still the synth one.")]
+        public bool musicRealAudio = false;
+        [Tooltip("Folder under Resources/Songs played when musicRealAudio is on.")]
+        public string musicSong = "Overflow";
+        [Tooltip("Stem layers that act as the melody (fade in with the flow, silent in the base and off the clock), comma-separated. The other layers always play.")]
+        public string musicStemLeadLayers = "vocals";
+        [Tooltip("On: the lead stems (vocals) act as the melody, coming in with the flow. Off: they're silent during chamber rounds and play only off the clock and at the base.")]
+        public bool musicStemLeadInChambers = false;
+        [Tooltip("Stem layers picked once per song and never swapped, comma-separated. Every other layer re-rolls its variant each time the loop comes round.")]
+        public string musicStemFixedLayers = "drums";
 
         [Header("Feel & sound")]
         public float screenShakeScale = 1f;

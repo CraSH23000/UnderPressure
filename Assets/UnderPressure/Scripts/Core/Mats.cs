@@ -17,6 +17,8 @@ namespace UnderPressure
         public static Color Liquid = new Color(0.25f, 1.0f, 0.45f);
         public static Color LiquidGlow = new Color(0.3f, 2.2f, 0.7f); // HDR -> bloom
         public static string LiquidName = "TOXIC SLIME";
+        /// <summary>The chamber's liquid: 1-based index into GameConfig.liquids (0 = none picked).</summary>
+        public static int LiquidId;
 
         /// <summary>
         /// How much of the liquid's glow shows on its surface (pipe fill, puddle). Dark liquids like VOID keep their

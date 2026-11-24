@@ -30,6 +30,7 @@ namespace UnderPressure
             public int channel;
             public bool fromA, loopPending;
             public bool filterIn;           // filling a filter's input arm (splits when it reaches the canister)
+            public Front partner;           // another stream filling this same channel from the other end: they'll meet and burst it
             public Dir exitDir;
             public Vector2Int cell;
             public LiquidGrade grade;
@@ -57,6 +58,13 @@ namespace UnderPressure
         public LiquidGrade SpillGrade { get; private set; }
         /// <summary>How many streams are flowing right now.</summary>
         public int Streams => fronts.Count;
+        /// <summary>The round ended with two streams meeting head-on and bursting a pipe (read in Spilled).</summary>
+        public bool LastSpillBurst { get; private set; }
+        /// <summary>For a burst: the pipe's direction at the tear (the two torn ends spray both ways along it);
+        /// zero for a shattered filter (it sprays straight up).</summary>
+        public Vector3 BurstAxis { get; private set; }
+        /// <summary>The burst was a filter fed two liquids (its canister shattered), not a pipe.</summary>
+        public bool LastBurstFilter { get; private set; }
 
         // loop bookkeeping: every channel the liquid enters is one "step"
         int step;
@@ -131,6 +139,8 @@ namespace UnderPressure
         public void Begin()
         {
             phase = Phase.Spout;
+            LastSpillBurst = false;
+            LastBurstFilter = false;
             var f = NewFront(LiquidGrade.Source, board.Spout.PointAt(0f));
             f.spout = true;
             f.t = 0f;
@@ -151,7 +161,7 @@ namespace UnderPressure
                 StepFront(f, dt);
                 if (phase == Phase.Done) return;
                 // the warning shows over whichever stream is closest to leaking
-                if (!f.spout && f.piece != null && !f.filterIn && !NextValid(f.cell, f.exitDir) && f.t > urgentT) { urgent = f; urgentT = f.t; }
+                if (!f.spout && f.piece != null && !f.filterIn && f.partner == null && !NextValid(f.cell, f.exitDir) && f.t > urgentT) { urgent = f; urgentT = f.t; }
                 else if (f.spout && !NextValid(board.Spout.Cell, board.Spout.Out) && f.t > urgentT) { urgent = f; urgentT = f.t; }
             }
             if (urgent != null) UpdateWarning(urgent.spout ? board.Spout.Cell : urgent.cell, urgent.spout ? board.Spout.Out : urgent.exitDir, urgent.t);
@@ -172,6 +182,23 @@ namespace UnderPressure
             if (f.piece == null) { Spill(f, f.cell, f.exitDir); return; } // defensive: piece destroyed under us
 
             f.t += dt * SpeedMultiplier / cfg.secondsPerPiece;
+
+            if (f.partner != null)
+            {
+                // two streams closing in on each other inside one channel
+                var o = f.partner;
+                var fa = f.fromA ? f : o;
+                var fb = f.fromA ? o : f;
+                if (f.t + o.t >= 1f)
+                {
+                    float over = f.t + o.t - 1f;
+                    BurstPipe(fa, fb, Mathf.Clamp01(fa.t - over * 0.5f));
+                    return;
+                }
+                f.piece.SetChannelFillTwoWay(f.channel, fa.t, fb.t, fa.grade, fb.grade);
+                MoveFront(f, f.piece.ChannelPoint(f.channel, f.t, f.fromA), dt);
+                return;
+            }
             f.piece.SetChannelFill(f.channel, Mathf.Min(f.t, 1f), f.fromA, f.grade);
             MoveFront(f, f.piece.ChannelPoint(f.channel, Mathf.Min(f.t, 1f), f.fromA), dt);
 
@@ -213,11 +240,17 @@ namespace UnderPressure
                 if (ch >= 0 && ch != f.channel && !outs.Contains(ch)) outs.Add(ch);
             }
             var at = p.ChannelPoint(f.channel, 1f, true);
+            var src = f.grade; // f becomes the purified stream below, so grade both outlets from what came in
+            // another stream already came in by an outlet arm: the filter's fed two liquids and the canister shatters
+            foreach (int ch in outs)
+            {
+                var other = fronts.Find(o => o != f && o.piece == p && o.channel == ch);
+                if (other != null || p.Model.channels[ch].fill > 0f) { BurstFilter(p, src, other != null ? other.grade : src); return; }
+            }
             for (int i = 0; i < outs.Count; i++)
             {
                 int ch = outs[i];
-                var grade = i == 0 ? f.grade.Purified : f.grade.Concentrated;
-                if (p.Model.channels[ch].fill > 0f) { Spill(f, p.Cell, p.WorldA(ch)); return; } // already wet: it overflows
+                var grade = i == 0 ? src.Purified : src.Concentrated;
                 var nf = i == 0 ? f : NewFront(grade, at);
                 nf.grade = grade;
                 nf.piece = p; nf.cell = p.Cell; nf.channel = ch;
@@ -226,7 +259,7 @@ namespace UnderPressure
                 nf.filterIn = false;
                 nf.loopPending = false;
                 nf.t = 0f;
-                if (i == 0 && !grade.Same(f.grade))
+                if (i == 0 && !grade.Same(src))
                 {
                     // the purified stream changes color: swap the blob's material
                     var r = nf.blob.GetComponent<Renderer>();
@@ -234,7 +267,11 @@ namespace UnderPressure
                 }
                 nf.spring.Squash(0.5f);
             }
-            Fx.Burst(at + Vector3.up * 0.2f, f.grade.Purified.Color, f.grade.Concentrated.Color, 14, 2.5f, 0.1f, 0.5f, -0.3f);
+            // a label over each outlet says what comes out of it and what it pays
+            for (int i = 0; i < outs.Count; i++)
+                OutletLabel.Create(p, p.WorldA(outs[i]), i == 0 ? src.Purified : src.Concentrated);
+            Popup.Spawn(at + Vector3.up * 0.8f, "SPLIT!", Color.white, 44, 0.9f);
+            Fx.Burst(at + Vector3.up * 0.2f, src.Purified.Color, src.Concentrated.Color, 14, 2.5f, 0.1f, 0.5f, -0.3f);
             Sfx.Play(Sfx.I != null ? Sfx.I.bloop : null, 0.7f, 0.75f);
             phase = Phase.Piece;
         }
@@ -252,6 +289,18 @@ namespace UnderPressure
             var n = from + DirUtil.Offset(dir);
             var p = board.Get(n);
             int ch = p != null && p.State == PieceState.Placed ? p.ChannelWithOpening(DirUtil.Opposite(dir)) : -1;
+            if (ch >= 0 && !board.IsSpout(n))
+            {
+                // another stream is coming the other way through this channel: go in and meet it
+                var other = fronts.Find(o => o != f && !o.spout && o.partner == null && o.piece == p && o.channel == ch);
+                // a second liquid into a filter that's already got one (in this arm, or done with it): the canister shatters
+                if (p.Type == PipeType.Filter && (other != null || p.Model.channels[ch].fill > 0f))
+                {
+                    BurstFilter(p, f.grade, other != null ? other.grade : f.grade);
+                    return;
+                }
+                if (other != null) { Converge(f, other, p, ch, n, dir); return; }
+            }
             if (ch < 0 || board.IsSpout(n) || p.Model.channels[ch].fill > 0f)
             {
                 Spill(f, from, dir);
@@ -277,61 +326,151 @@ namespace UnderPressure
             f.spring.Squash(0.4f);
         }
 
+        /// <summary>A stream entering a channel another stream is already filling from the other end.</summary>
+        void Converge(Front f, Front other, PipePiece p, int ch, Vector2Int n, Dir dir)
+        {
+            step++;
+            f.piece = p;
+            f.channel = ch;
+            f.cell = n;
+            f.filterIn = false;
+            f.loopPending = false;
+            f.fromA = p.WorldA(ch) == DirUtil.Opposite(dir); // a filter arm's 'a' end is its edge
+            f.exitDir = f.fromA ? p.WorldB(ch) : p.WorldA(ch);
+            f.partner = other;
+            other.partner = f;
+            p.FlowLocked = true;
+            phase = Phase.Piece;
+            f.t = 0f;
+            f.spring.Squash(0.4f);
+        }
+
+        /// <summary>Two streams met head-on: the pipe bursts where they meet and the round is over.</summary>
+        void BurstPipe(Front fa, Front fb, float atFromA)
+        {
+            var p = fa.piece;
+            int ch = fa.channel;
+            p.SetChannelFillTwoWay(ch, atFromA, 1f - atFromA, fa.grade, fb.grade);
+            p.BurstChannel(ch, atFromA, fa.grade, fb.grade);
+            Vector3 pos = p.ChannelPoint(ch, atFromA, true);
+            Vector3 axis = p.ChannelPoint(ch, Mathf.Min(1f, atFromA + 0.05f), true) - p.ChannelPoint(ch, Mathf.Max(0f, atFromA - 0.05f), true);
+            axis.y = 0f;
+            EndInBurst(pos, axis.sqrMagnitude > 1e-6f ? axis.normalized : Vector3.forward, fa.grade, fb.grade, false);
+        }
+
+        /// <summary>A filter fed two liquids: its glass canister shatters and the cap pops off.</summary>
+        void BurstFilter(PipePiece p, LiquidGrade a, LiquidGrade b)
+        {
+            p.ShatterCanister();
+            EndInBurst(p.CanisterPoint, Vector3.zero, a, b, true);
+        }
+
+        void EndInBurst(Vector3 pos, Vector3 axis, LiquidGrade a, LiquidGrade b, bool filter)
+        {
+            BurstAxis = axis;
+            LastSpillBurst = true;
+            LastBurstFilter = filter;
+            // placeholder until merged grades have their own effects: the worse of the two
+            SpillGrade = !a.water || b.water ? a : b;
+            phase = Phase.Done;
+            warning.gameObject.SetActive(false);
+            foreach (var o in fronts.ToArray()) RemoveFront(o);
+            Spilled?.Invoke(pos, Vector3.Cross(Vector3.up, axis));
+        }
+
+        /// <summary>One look-ahead path in CountAheadAll: its head is the channel it last claimed.</summary>
+        class Walker
+        {
+            public PipePiece piece;
+            public int ch = -1;
+            public Vector2Int cell;
+            public Dir dir;
+            public int count;
+            public bool splitNext, done, branched;
+        }
+
+        /// <summary>
+        /// Connected, still-empty pipes ahead of the most urgent stream before it leaks (capped at max). Every stream
+        /// walks ahead in lockstep, one channel per step (they all flow at the same speed), branching at filters, and
+        /// claims each channel it reaches. Running into a claimed channel means two streams meet there, which is a
+        /// burst, so two streams heading for each other only get half the shared run each.
+        /// </summary>
         int CountAheadAll(int max)
         {
+            if (fronts.Count == 0) return 99;
+            var claims = new Dictionary<(PipePiece, int), Walker>();
+            var walkers = new List<Walker>();
+            foreach (var f in fronts)
+            {
+                if (f.partner != null) return 0; // already closing in on another stream
+                if (f.spout) { walkers.Add(new Walker { cell = board.Spout.Cell, dir = board.Spout.Out }); continue; }
+                if (f.piece == null) return 0;
+                var w = new Walker { piece = f.piece, ch = f.channel, cell = f.cell, dir = f.exitDir, splitNext = f.filterIn };
+                claims[(f.piece, f.channel)] = w;
+                walkers.Add(w);
+            }
+
+            for (int guard = 0; guard < 64; guard++)
+            {
+                bool any = false;
+                int live = walkers.Count;
+                for (int i = 0; i < live; i++)
+                {
+                    var w = walkers[i];
+                    if (w.done) continue;
+                    if (w.count >= max) { w.done = true; continue; } // far enough ahead: no need to look further
+                    any = true;
+                    if (w.splitNext) SplitWalker(w, walkers, claims);
+                    else StepWalker(w, claims);
+                }
+                if (!any) break;
+            }
+
             int best = max;
-            foreach (var f in fronts) best = Mathf.Min(best, CountAhead(f, max));
-            return fronts.Count == 0 ? 99 : best;
-        }
-
-        /// <summary>Walk the connected path ahead (without changing anything) and count pipes until it would leak.</summary>
-        int CountAhead(Front f, int max)
-        {
-            var used = new HashSet<(PipePiece, int)>();
-            if (f.spout) return CountFrom(board.Spout.Cell, board.Spout.Out, max, used);
-            if (f.filterIn)
-            {
-                // filling a filter's input arm: what matters is the shorter of its two outlets
-                return CountOutlets(f.piece, f.channel, max, used);
-            }
-            return CountFrom(f.cell, f.exitDir, max, used);
-        }
-
-        /// <summary>Pipes the liquid can still fill going out of 'cur' in 'dir' before it would leak. Through a filter
-        /// it follows both outlets and takes the shorter one (either one running dry ends the round).</summary>
-        int CountFrom(Vector2Int cur, Dir dir, int max, HashSet<(PipePiece, int)> used)
-        {
-            int count = 0;
-            while (count < max)
-            {
-                var n = cur + DirUtil.Offset(dir);
-                if (board.IsSpout(n)) break;
-                var p = board.Get(n);
-                if (p == null || p.State != PieceState.Placed) break;
-                int ch = p.ChannelWithOpening(DirUtil.Opposite(dir));
-                if (ch < 0 || p.Model.channels[ch].fill > 0f || used.Contains((p, ch))) break;
-                used.Add((p, ch));
-                count++;
-                if (p.Type == PipeType.Filter) return count + CountOutlets(p, ch, max - count, used);
-                bool a = p.WorldA(ch) == DirUtil.Opposite(dir);
-                dir = a ? p.WorldB(ch) : p.WorldA(ch);
-                cur = n;
-            }
-            return count;
-        }
-
-        /// <summary>The shorter of a filter's two outlets (the arms other than the one the liquid came in by).</summary>
-        int CountOutlets(PipePiece filter, int inArm, int max, HashSet<(PipePiece, int)> used)
-        {
-            if (max <= 0) return 0;
-            int best = max;
-            for (int i = 0; i < filter.Model.channels.Count; i++)
-            {
-                if (i == inArm) continue;
-                if (filter.Model.channels[i].fill > 0f) return 0; // already wet: it would overflow right there
-                best = Mathf.Min(best, CountFrom(filter.Cell, filter.WorldA(i), max, new HashSet<(PipePiece, int)>(used)));
-            }
+            foreach (var w in walkers) if (!w.branched) best = Mathf.Min(best, w.count);
             return best;
+        }
+
+        /// <summary>Stops a walker at a claimed channel; if that channel is the other walker's head, they've met and it stops too.</summary>
+        static void Collide(Walker w, Walker owner, PipePiece p, int ch)
+        {
+            w.done = true;
+            if (owner != null && !owner.done && owner.piece == p && owner.ch == ch) owner.done = true;
+        }
+
+        void StepWalker(Walker w, Dictionary<(PipePiece, int), Walker> claims)
+        {
+            var n = w.cell + DirUtil.Offset(w.dir);
+            var p = board.IsSpout(n) ? null : board.Get(n);
+            int ch = p != null && p.State == PieceState.Placed ? p.ChannelWithOpening(DirUtil.Opposite(w.dir)) : -1;
+            if (ch < 0 || p.Model.channels[ch].fill > 0f) { w.done = true; return; } // it would leak here
+            if (claims.TryGetValue((p, ch), out var owner)) { Collide(w, owner, p, ch); return; }
+            claims[(p, ch)] = w;
+            w.piece = p;
+            w.ch = ch;
+            w.cell = n;
+            w.count++;
+            if (p.Type == PipeType.Filter) { w.splitNext = true; return; }
+            bool a = p.WorldA(ch) == DirUtil.Opposite(w.dir);
+            w.dir = a ? p.WorldB(ch) : p.WorldA(ch);
+        }
+
+        /// <summary>A walker at a filter's canister carries on down both outlets (the outlet arms take a step but aren't counted).</summary>
+        void SplitWalker(Walker w, List<Walker> walkers, Dictionary<(PipePiece, int), Walker> claims)
+        {
+            var p = w.piece;
+            w.splitNext = false;
+            for (int i = 0; i < p.Model.channels.Count; i++)
+            {
+                if (i == w.ch) continue;
+                if (p.Model.channels[i].fill > 0f) { w.done = true; return; } // already wet: it would overflow right there
+                if (claims.TryGetValue((p, i), out var owner)) { Collide(w, owner, p, i); return; }
+                var nw = new Walker { piece = p, ch = i, cell = p.Cell, dir = p.WorldA(i), count = w.count };
+                claims[(p, i)] = nw;
+                walkers.Add(nw);
+            }
+            w.done = true;
+            w.branched = true; // its outlets carry on in its place
         }
 
         bool NextValid(Vector2Int from, Dir dir)

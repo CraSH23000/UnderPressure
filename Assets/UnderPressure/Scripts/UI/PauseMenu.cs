@@ -15,7 +15,7 @@ namespace UnderPressure
     /// </summary>
     public class PauseMenu : MonoBehaviour
     {
-        enum Page { Closed, Main, Controls, Settings }
+        enum Page { Closed, Main, Controls, Settings, Players }
 
         class Item
         {
@@ -54,6 +54,7 @@ namespace UnderPressure
         static readonly Color ValueColor = new Color(0.75f, 0.9f, 1f);
 
         public bool IsOpen => page != Page.Closed;
+        InputDevice opener; // the device that opened the menu (its player is pre-selected on the Players page)
 
         public void Build(RectTransform root)
         {
@@ -145,6 +146,7 @@ namespace UnderPressure
                 case Page.Main: BuildMain(); break;
                 case Page.Controls: BuildControls(); break;
                 case Page.Settings: BuildSettings(); break;
+                case Page.Players: BuildPlayers(); break;
             }
             Refresh();
         }
@@ -154,12 +156,39 @@ namespace UnderPressure
         void BuildMain()
         {
             title.text = "PAUSED";
-            box.sizeDelta = new Vector2(760, 640);
+            box.sizeDelta = new Vector2(760, 730);
             AddItem("Resume", Close);
             AddItem("Controls", () => Show(Page.Controls));
             AddItem("Settings", () => Show(Page.Settings));
+            if (JoinManager.Instance != null && JoinManager.Instance.Slots.Count > 0) AddItem("Players", () => Show(Page.Players));
             AddItem("Restart Chamber", () => { Close(); Game.Bootstrap.Restart(); });
             AddItem("Quit Game", Quit);
+        }
+
+        /// <summary>Everyone who's joined; picking one makes them leave. Opens on the player whose controller opened the menu.</summary>
+        void BuildPlayers()
+        {
+            title.text = "PLAYERS";
+            var joins = JoinManager.Instance;
+            var slots = joins != null ? new List<JoinManager.Slot>(joins.Slots) : new List<JoinManager.Slot>();
+            slots.Sort((a, b) => a.index.CompareTo(b.index));
+            box.sizeDelta = new Vector2(760, 330 + slots.Count * 95);
+            int mine = -1;
+            foreach (var slot in slots)
+            {
+                int index = slot.index;
+                string hex = ColorUtility.ToHtmlStringRGB(slot.Color);
+                var it = AddItem($"<color=#{hex}>P{index + 1}</color>  {JoinManager.SchemeLabel(slot.scheme)}  ·  leave", () =>
+                {
+                    JoinManager.Instance?.Leave(index);
+                    if (JoinManager.Instance == null || JoinManager.Instance.Slots.Count == 0) Close();
+                    else Show(Page.Players);
+                });
+                it.label.supportRichText = true;
+                if (opener != null && slot.device == opener && slot.scheme == ControlScheme.Gamepad) mine = items.Count - 1;
+            }
+            AddItem("Back", () => Show(Page.Main));
+            if (mine >= 0) sel = mine;
         }
 
         void BuildSettings()
@@ -432,7 +461,14 @@ namespace UnderPressure
         {
             if (page == Page.Closed)
             {
-                if (open.WasPressedThisFrame() && Game.Bootstrap != null) Open();
+                if (open.WasPressedThisFrame() && Game.Bootstrap != null)
+                {
+                    var dev = open.activeControl != null ? open.activeControl.device : null;
+                    // Start on a controller nobody's playing on joins them instead (JoinManager)
+                    if (JoinManager.Instance != null && JoinManager.Instance.StartJoins(dev)) return;
+                    opener = dev;
+                    Open();
+                }
                 return;
             }
 

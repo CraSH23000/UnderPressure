@@ -17,7 +17,10 @@ namespace UnderPressure
         Image distanceFillImg;
         readonly Image[] rings = new Image[JoinManager.MaxPlayers];
         readonly RectTransform[] ringRects = new RectTransform[JoinManager.MaxPlayers];
-        Text joinPrompt, roster;
+        Text roster;
+        GameObject distanceRoot;
+        bool joinOpen;
+        System.Collections.Generic.IList<PlayerController> rosterPlayers;
         GameObject endPanel, pausePanel;
         Image flashImg;
         float flashAmount;
@@ -68,7 +71,7 @@ namespace UnderPressure
             distanceFill.offsetMax = new Vector2(-5, -5);
             distanceFillImg = distanceFill.gameObject.AddComponent<Image>();
             distanceFillImg.color = Mats.Liquid;
-            dg.gameObject.SetActive(false); // distance now lives on the spout hologram + wall monitor
+            distanceRoot = dg.gameObject; // the round's goal (hidden at the base, where there's no round)
 
             // Controls (bottom-left)
             var ht = Rect("Hints", root, new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0), new Vector2(40, 24), new Vector2(1840, 150));
@@ -100,12 +103,11 @@ namespace UnderPressure
                 ringRects[i] = rr;
             }
 
-            // Join prompt (bottom-right) and player roster (under the money)
-            var jp = Rect("JoinPrompt", root, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), new Vector2(-40, -30), new Vector2(1000, 50));
-            joinPrompt = Popup.MakeText(jp.gameObject, "", 26, Color.white, TextAnchor.MiddleRight);
-            var ro = Rect("Roster", root, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(44, -160), new Vector2(700, 50));
-            roster = Popup.MakeText(ro.gameObject, "", 30, Color.white, TextAnchor.MiddleLeft);
+            // Player roster under the money: one player per line in slot order, and "P2 join" on the next free line
+            var ro = Rect("Roster", root, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), new Vector2(44, -140), new Vector2(700, 240));
+            roster = Popup.MakeText(ro.gameObject, "", 30, Color.white, TextAnchor.UpperLeft);
             roster.supportRichText = true;
+            roster.lineSpacing = 1.1f;
 
             // Popups go above everything else
             PopupLayer = Rect("Popups", root, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
@@ -462,7 +464,7 @@ namespace UnderPressure
         public void SetDistance(int value, int goal)
         {
             bool done = value >= goal;
-            distance.text = done ? $"DISTANCE {value}  <color=#FFD640>GOAL!</color>" : $"DISTANCE {value} / {goal}";
+            distance.text = done ? $"{value} PIPES  <color=#FFD640>GOAL!</color>" : $"{value} / {goal} PIPES";
             distance.supportRichText = true;
             distanceFill.anchorMax = new Vector2(Mathf.Clamp01(value / (float)Mathf.Max(1, goal)), 1f);
             distanceFillImg.color = done ? Mats.Money : Mats.Liquid;
@@ -489,7 +491,19 @@ namespace UnderPressure
             if (rr.gameObject.activeSelf) rr.gameObject.SetActive(false);
         }
 
-        public void SetJoinPrompt(string text) => joinPrompt.text = text;
+        /// <summary>Whether to show the "Pn join" line under the roster (there's room, and someone's already playing).</summary>
+        public void SetJoinPrompt(bool show)
+        {
+            if (show == joinOpen) return;
+            joinOpen = show;
+            RebuildRoster();
+        }
+
+        /// <summary>The distance goal (top-right); hidden at the base.</summary>
+        public void ShowDistance(bool on)
+        {
+            if (distanceRoot != null && distanceRoot.activeSelf != on) distanceRoot.SetActive(on);
+        }
 
         /// <summary>Full-screen flash (lightning strike) that fades out.</summary>
         public void Flash(Color c, float amount = 1f)
@@ -506,12 +520,28 @@ namespace UnderPressure
 
         public void SetRoster(System.Collections.Generic.IList<PlayerController> players)
         {
+            rosterPlayers = players;
+            RebuildRoster();
+        }
+
+        void RebuildRoster()
+        {
             var sb = new System.Text.StringBuilder();
-            foreach (var p in players)
+            bool joinShown = false;
+            for (int i = 0; i < JoinManager.MaxPlayers; i++)
             {
-                if (p == null) continue;
-                string hex = ColorUtility.ToHtmlStringRGB(p.Color);
-                sb.Append($"<color=#{hex}>P{p.Index + 1}</color> <size=20>{JoinManager.SchemeLabel(p.Scheme)}</size>    ");
+                PlayerController p = null;
+                if (rosterPlayers != null) foreach (var pl in rosterPlayers) if (pl != null && pl.Index == i) p = pl;
+                if (p != null)
+                {
+                    string hex = ColorUtility.ToHtmlStringRGB(p.Color);
+                    sb.Append($"<color=#{hex}>P{i + 1}</color> <size=20>{JoinManager.SchemeLabel(p.Scheme)}</size>\n");
+                }
+                else if (joinOpen && !joinShown)
+                {
+                    joinShown = true;
+                    sb.Append($"<color=#FFFFFF99>P{i + 1}</color> <size=20><color=#FFFFFF99>JOIN</color></size>\n");
+                }
             }
             roster.text = sb.ToString();
         }

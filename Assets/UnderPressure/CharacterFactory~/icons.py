@@ -351,6 +351,52 @@ def filterpiece():
     render("item_filter")
 
 
+def serum():
+    """Spider Monkey Serum: a corked lab vial of glowing pink serum, a monkey's tail curled round it."""
+    cf.reset_scene()
+    studio((256, 256), samples=64)
+    glass = cf.mat("Glass", (0.85, 0.92, 1.0), rough=0.05, alpha=0.3)
+    pink = cf.mat("Serum", (0.95, 0.25, 0.75), rough=0.15, emission=(0.6, 0.1, 0.45))
+    cork = cf.mat("Cork", (0.6, 0.4, 0.2), rough=0.7)
+    fur = cf.mat("Fur", (0.45, 0.28, 0.14), rough=0.8)
+    label = cf.mat("Label", (0.96, 0.95, 0.9), rough=0.5)
+    parts = []
+    parts.append(cf.cylinder("Vial", (0, 0, 0.45), 0.2, 0.72, glass))
+    parts.append(cf.sphere("Bottom", (0, 0, 0.09), (0.2, 0.2, 0.1), glass))
+    parts.append(cf.cylinder("Serum", (0, 0, 0.36), 0.175, 0.5, pink))
+    parts.append(cf.sphere("SerumBottom", (0, 0, 0.11), (0.175, 0.175, 0.08), pink))
+    parts.append(cf.cylinder("Label", (0, 0, 0.42), 0.205, 0.16, label))
+    parts.append(cf.cylinder("Cork", (0, 0, 0.88), 0.16, 0.16, cork, r2=0.19))
+    # the tail: spirals up round the vial and curls over at the top
+    pts, radii = [], []
+    for i in range(13):
+        t = i / 12
+        a = math.radians(-60 + t * 520)
+        r = 0.27 - 0.03 * t
+        pts.append((math.cos(a) * r, math.sin(a) * r, 0.12 + t * 0.7))
+        radii.append(0.04 - 0.015 * t)
+    pts += [(0.05, -0.2, 0.96), (-0.05, -0.15, 1.02), (-0.04, -0.08, 0.95)]
+    radii += [0.022, 0.02, 0.018]
+    parts.append(cf.tube("Tail", pts, radii, fur))
+    group(parts, (0, math.radians(-12), math.radians(-18)), (0, 0, 0.5))
+    camera(12, 1.3, (0, 0, 0.52))
+    render("item_serum")
+
+
+def spoon():
+    """The Spoon: a plain silver spoon, tilted. There is no pipe."""
+    cf.reset_scene()
+    studio((256, 256), samples=64)
+    steel = cf.mat("Steel", (0.9, 0.92, 0.96), rough=0.28, metal=0.75)
+    parts = []
+    bowl = cf.sphere("Bowl", (0, 0, 0.74), (0.21, 0.06, 0.27), steel, segs=40, rings=20)
+    parts.append(bowl)
+    parts.append(cf.tube("Neck", [(0, 0, 0.6), (0, 0.01, 0.42), (0, 0.02, 0.2), (0, 0.0, 0.0)], [0.04, 0.035, 0.045, 0.06], steel, cap=True))
+    group(parts, (0, math.radians(-35), 0), (0, 0, 0.5))
+    camera(10, 1.05, (0.0, 0, 0.5))
+    render("item_spoon")
+
+
 def badge_new():
     """A NEW! sticker: a gold starburst with a red rim and the word on it (flat, facing the camera)."""
     cf.reset_scene()
@@ -389,6 +435,10 @@ if __name__ == "__main__":
         OUT = "out/icons"
         badge_new()
         sys.exit(0)
+    if len(sys.argv) > 1 and sys.argv[-1] == "serumspoon":
+        OUT = "out/icons"
+        serum(); spoon()
+        sys.exit(0)
     if len(sys.argv) > 1 and sys.argv[-1] == "filter":
         OUT = "out/icons"
         filterpiece()
@@ -411,4 +461,4 @@ if __name__ == "__main__":
     face_button()
     bottle()
     backpack()
-    ant(); pegleg(); crossing(); funnel(); filterpiece()
+    ant(); pegleg(); crossing(); funnel(); filterpiece(); serum(); spoon()

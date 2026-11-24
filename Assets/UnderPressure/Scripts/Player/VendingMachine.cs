@@ -77,6 +77,8 @@ namespace UnderPressure
             if (Item.consumable) return $"BUY A {Item.name}  ${Items.NextPrice(Item.id):N0}";
             string id = Item.id;
             int lvl = Items.Level(id), max = Items.MaxLevel(id);
+            if (lvl >= max && Item.refillPrice != null)
+                return Items.NeedsRefill(id) ? $"REFILL {Item.name}  ${Item.refillPrice(Game.Config):N0}" : $"{Item.name}: EVERYONE'S FULL";
             if (lvl >= max) return max > 1 ? $"{Item.name} MAXED OUT (LV {lvl})" : "SOLD OUT (YOU ALL HAVE ONE)";
             if (lvl == 0 && Item.requires != null && !Items.TeamOwns(Item.requires)) return $"{Item.name}: NEEDS A {Items.Get(Item.requires)?.name}";
             if (lvl == 0) return $"BUY {Item.name}  ${Items.NextPrice(id):N0}";
@@ -244,6 +246,13 @@ namespace UnderPressure
                         Prims.Make(PrimitiveType.Cylinder, t, new Vector3(0, 0.04f, 0.04f), new Vector3(0.03f, 0.04f, 0.03f), pipe, Quaternion.Euler(90, 0, 0), "Stem");
                         Prims.Make(PrimitiveType.Cylinder, t, new Vector3(0, 0.07f, 0), new Vector3(0.05f, 0.05f, 0.05f), Mats.Lit(new Color(0.3f, 0.6f, 0.95f), 0.5f), null, "Canister");
                     });
+                    case Items.SpiderSerum: return MakeSerum(parent, localPos, scale);
+                    case Items.Spoon: return Mini(parent, localPos, scale, "MiniSpoon", (t, k) =>
+                    {
+                        var steel = Mats.Lit(new Color(0.82f, 0.85f, 0.9f), 0.9f, 1f);
+                        Prims.Make(PrimitiveType.Sphere, t, new Vector3(0, 0.15f, 0), new Vector3(0.06f, 0.08f, 0.025f), steel, null, "Bowl");
+                        Prims.Make(PrimitiveType.Cube, t, new Vector3(0, 0.06f, 0), new Vector3(0.018f, 0.12f, 0.008f), steel, null, "Handle");
+                    });
                     case Items.Funnel: return Mini(parent, localPos, scale, "MiniFunnel", (t, k) =>
                     {
                         var tin = Mats.Lit(new Color(0.85f, 0.75f, 0.3f), 0.7f, 0.8f);
@@ -274,6 +283,18 @@ namespace UnderPressure
             Prims.Make(PrimitiveType.Cube, b, new Vector3(0, 0.15f, 0.005f), new Vector3(0.125f, 0.04f, 0.085f), dark, null, "Flap");
             Prims.Make(PrimitiveType.Cube, b, new Vector3(0, 0.05f, 0.045f), new Vector3(0.08f, 0.06f, 0.02f), dark, null, "Pocket");
             return b;
+        }
+
+        /// <summary>A vial of Spider Monkey Serum (for the shelf, the dispenser and the drinking animation).</summary>
+        public static Transform MakeSerum(Transform parent, Vector3 localPos, float scale)
+        {
+            return Mini(parent, localPos, scale, "MiniSerum", (t, k) =>
+            {
+                var pink = new Color(0.95f, 0.3f, 0.8f);
+                Prims.Make(PrimitiveType.Cylinder, t, new Vector3(0, 0.07f, 0), new Vector3(0.05f, 0.07f, 0.05f), Mats.Transparent(new Color(0.85f, 0.9f, 1f, 0.4f)), null, "Vial");
+                Prims.Make(PrimitiveType.Cylinder, t, new Vector3(0, 0.05f, 0), new Vector3(0.042f, 0.045f, 0.042f), Mats.Lit(pink, 0.6f, 0f, pink * 0.6f), null, "Serum");
+                Prims.Make(PrimitiveType.Cylinder, t, new Vector3(0, 0.15f, 0), new Vector3(0.035f, 0.015f, 0.035f), Mats.Lit(new Color(0.55f, 0.35f, 0.18f), 0.3f), null, "Cork");
+            });
         }
 
         /// <summary>A bottle model (for drinking animations and the dispenser).</summary>
@@ -322,6 +343,7 @@ namespace UnderPressure
             if (Item == null) return;
             if (Item.consumable) { priceText.text = "$" + ShortMoney(Items.NextPrice(Item.id)); return; }
             int lvl = Items.Level(Item.id), max = Items.MaxLevel(Item.id);
+            if (lvl >= max && Item.refillPrice != null) { priceText.text = "$" + ShortMoney(Item.refillPrice(Game.Config)); return; }
             priceText.text = lvl >= max ? (max > 1 ? "MAX" : "SOLD\nOUT") : "$" + ShortMoney(Items.NextPrice(Item.id));
         }
 
@@ -342,6 +364,7 @@ namespace UnderPressure
             string id = Item.id;
             if (Item.consumable) { BuyOne(p); return; }
             int lvl = Items.Level(id), max = Items.MaxLevel(id);
+            if (lvl >= max && Item.refillPrice != null) { Refill(); return; }
             if (lvl >= max)
             {
                 Popup.Spawn(PromptAnchor, max > 1 ? "MAXED OUT" : "EVERYONE HAS ONE", Color.white, 34, 0.9f);
@@ -393,6 +416,39 @@ namespace UnderPressure
                 string line = Item.id == Items.WaterBottle ? $"+ BOTTLE  [{pl.InventoryLabel}]" : now == 1 ? $"+ {Item.name}" : $"{Item.name} LV {now}";
                 Popup.Spawn(pl.transform.position + Vector3.up * 1.8f, line, bc, 30, 1.8f);
             }
+        }
+
+        /// <summary>Owned items with charges (the serum): the machine sells refills, everyone back to full.</summary>
+        void Refill()
+        {
+            if (!Items.NeedsRefill(Item.id))
+            {
+                Popup.Spawn(PromptAnchor, "EVERYONE'S FULL", Color.white, 34, 0.9f);
+                Sfx.Play(Sfx.I != null ? Sfx.I.nope : null, 0.6f, 1f);
+                shake = 0.3f;
+                return;
+            }
+            long price = Item.refillPrice(Game.Config);
+            if (Game.Bootstrap.Bank < price)
+            {
+                Popup.Spawn(PromptAnchor, $"NEED ${price - Game.Bootstrap.Bank:N0} MORE", Mats.Danger, 36, 1f);
+                Sfx.Play(Sfx.I != null ? Sfx.I.nope : null, 0.7f, 0.9f);
+                shake = 0.5f;
+                return;
+            }
+            Game.Bootstrap.Bank -= price;
+            Items.RefillForTeam(Item.id);
+            shake = 0.8f;
+            signPulse = 1f;
+            Popup.Spawn(PromptAnchor, $"-${price:N0}", Mats.Danger, 40, 1f);
+            Sfx.Play(Sfx.I != null ? Sfx.I.coin : null, 0.9f, 1f);
+            Juice.Delay(0.2f, () => Sfx.Play(Sfx.I != null ? Sfx.I.clunk : null, 0.8f, 1.3f));
+            var drop = MakeProduct(Item, tray, new Vector3(0, 0.5f, 0), 1.2f);
+            Juice.ScaleTo(drop, Vector3.one * 0.2f, Vector3.one * 1.2f, 0.2f, Juice.OutBack);
+            StartCoroutine(DropBottle(drop));
+            Color bc = Color.Lerp(SignColor, Color.white, 0.3f);
+            foreach (var pl in Game.Players)
+                if (pl != null) Popup.Spawn(pl.transform.position + Vector3.up * 1.8f, $"{Item.name} REFILLED  {Items.MaxCharges(Item.id)}/{Items.MaxCharges(Item.id)}", bc, 28, 1.6f);
         }
 
         /// <summary>Consumables (the filter piece): the buyer pays and it drops straight into their hands.</summary>

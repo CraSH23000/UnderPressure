@@ -58,7 +58,8 @@
   - every filled pipe pays;
   - crosses make loops, and nested loops multiply;
   - money goes to the round total, then to the bank on a win.
-- **Panic:** an alarm, music and a red warning blob over the most urgent stream when fewer than `panicPiecesAhead` (4) connected empty pipes remain.
+- **Panic:** an alarm, music and a red warning blob over the most urgent stream when fewer than `panicPiecesAhead` (4) connected empty pipes remain. The look-ahead walks every stream in lockstep, so two streams heading for each other only count half the shared run each.
+- **Pipe burst:** two streams that meet head-on in one channel (e.g. a filter's outlets routed into each other) burst the pipe where they meet: the tube there is blown away and both torn ends peel back in strips like an exploding cigar (`TornEnd`), each colored by its stream. The puddle lands under the tear, PIPE BURST! shows, and it ends the round like any leak. Counted in the team stat `pipebursts`. A filter fed a second liquid shatters its canister instead (glass stump, flying shards, the cap pops off; FILTER SHATTERED!), counted the same way.
 - **Off the clock:** after a round the belt idles slowly (free play) and the lever still works. The music drops the lead and harmony.
 - **Teleporters:**
   - **Rising:** at round end they rise out of the floor like a secret elevator: hazard doors retract, the teleporter rides up the shaft and lands with a thunk.
@@ -194,10 +195,12 @@
 | **Backpack** | Base | $500, ×5 each upgrade, up to LV 10 | Carry `backpackPiecesPerLevel` (1) spare piece per level. **Button:** stow the piece in your hands, or take one out. Grabbing with full hands auto-stows; placing a piece auto-pops the next. **Looks:** LV1 camping pack → LV2 fanny pack → **LV3+ white lab hover rig**, with pieces floating in a blue beam behind you starting by your legs (2 columns once it holds more than 4), then twin emitters, orange trim, fins and a halo. Rides on the body (jumps and crawls). Stage names: BACKPACK, FANNY PACK ATTACHMENT, HOVER RIG, TALLER BEAM, TWIN EMITTERS, SAFETY TRIM, STABILIZER FINS, OVERCLOCKED BEAM, EXPERIMENTAL FIELD, HALO TOWER. |
 | **A Count Ant** | Base | $1,500 | All earnings +`countAntBonus` (10%). |
 | **Lucky Pirate's Foot** (a peg leg) | Base | $2,000 | Luck +`pirateFootLuck` (50%): every lucky chance ×(1+luck). A green **LUCKY!** pops up when a result only happened thanks to luck. |
+| **Spider Monkey Serum** | Base | $1,800; refills $500 | 4 doses. A dose lasts the whole chamber: walking into a pipe climbs or vaults it (no jump), and climbing/crawling on top goes at walk speed. Once owned, its machine sells refills (everyone back to 4). Pink corked vial with a monkey tail. |
+| **Spoon** | Base | $2,500 | "Pipes aren't real, they can't hurt you." Passive, ON DASH: dashes pass through pipes (the climbing layer), and a dash that would end inside one carries on until clear. Items now have an `effect` line (plain words, shown in the details page under the flavour text). |
 | **Water bottle** | Chamber 1 (and the base, as a placeholder) | $750 | 10 sips each. A sip lasts 45 s: walk ×1.2 and dash twice. **Use:** pull out → lift → head tilts back → glugs → put away. |
-| **Funnel** | Chamber 2 | $2,500 (needs the bottle) | Stand in the leak when a chamber ends: water refills the bottle; any other stream **contaminates** it. Sip effects: TOXIC = faster + extra dash + hiccups; IRRADIATED = much longer dashes; VOID = lots of long dashes; FILTERED/PURE water = better sips; concentrates ×2/×3; **grade 3 is lethal** ("DON'T DRINK THAT", charred, reprinted at your locker for free). |
+| **Funnel** | Chamber 2 | $2,500 (needs the bottle) | Stand in the leak when a chamber ends: water refills the bottle; any other stream **contaminates** it. Sip effects: TOXIC = faster + extra dash + hiccups; IRRADIATED = much longer dashes; VOID = lots of long dashes; FILTERED/PURE water = better sips; `+`/`++` ×2/×3; **`+++` or deionized is lethal** ("DON'T DRINK THAT", charred, reprinted at your locker for free). |
 | **Crossing Sign** (a crossing guard's STOP paddle) | Chamber 3 | $3,000 | +`crossingSignBoost` (25%) crosses. Extra crosses ride the belt with the paddle waving over them, plus LUCKY! if luck tipped it. |
-| **Filter Piece** (consumable) | Chamber 4+ | $400 each | Goes straight into the buyer's hands. A T-pipe with a glass canister: liquid entering any arm **splits into two streams** out the other arms. **Clockwise outlet = purified, other = concentrate.** Grades 0–3 (WATER → FILTERED → PURE → DEIONIZED; X → CONCENTRATED → DOUBLE- → HYPER-). Each stream has its own color, and each grade pays +`filterGradeBonus` (50%). If either stream leaks, the round ends. |
+| **Filter Piece** (consumable) | Chamber 4+ | $400 each | Goes straight into the buyer's hands. A T-pipe with a glass canister: liquid entering any arm **splits into two streams** out the other arms. **Clockwise outlet = purified, other = concentrate.** Grades 0–3 (what each side becomes is data: `purifiesTo` / `concentratesTo` on each liquid; `NAME+` = endless chain NAME+, ++, +++, +4...). Each stream has its own color, and each grade pays +`filterGradeBonus` (50%). If either stream leaks, the round ends. |
 
 - **Lucky breaks so far:** a filled pipe paying double ("BONUS x2", `bonusPipeChance` 5%) and the Crossing Sign's extra crosses.
 - **Flow engine:** it now runs **multiple liquid fronts**, each with its own grade, blob and trail. The panic count follows both filter outlets and takes the shorter one.
@@ -219,6 +222,7 @@ Unlocks get a banner and appear on the results monitor (NEW! rows first).
 ## 4. NOT yet implemented (the to-do list)
 
 ### Items and economy
+- **Delete items from your inventory:** roguelike insurance, so a build that's gone off the rails (too many wild upgrades) can be undone. Deleting keeps the record of what you bought: re-buying the serum costs full price (more than a refill); a deleted backpack can be picked up again for free, at the level you'd upgraded it to. Anything upgradeable keeps its upgrades.
 - **Hazmat suit** (planned for chamber 5): −50% toxic slime vulnerability. **Blocked:** toxic slime doesn't hurt yet (a spray only splashes). First design a "sick" state (e.g. slowed, green, hiccupping) from toxic sprays, then the suit halves it. It could also be wearable.
 - **Balatro-style scaling:** later items like +1000% luck or money, so the 5× backpack prices become reachable.
 - **More luck hooks:** e.g. better belt pieces, a spill grace (one extra pipe), unlock rate. Always show LUCKY! when luck made the difference.
@@ -228,7 +232,17 @@ Unlocks get a banner and appear on the results monitor (NEW! rows first).
 - **Bottle refills via a fountain** (the Funnel partly covers this).
 - **Fill the remaining out-of-order slots:** future chambers' own items. "Every future chamber has a filter machine" is already in.
 
+### Pipe Burster (achievement) and the pipe bomb
+- **Pipe Burster achievement** from the `pipebursts` team stat, with bigger tiers later (e.g. 10, 100). Tie cosmetics to it (soot-blackened finish, a frayed pipe-stub hat or cigar) and the pipe bomb unlock.
+- **Burst grade effects (backburner):** a burst should splash all three: each torn end's own grade plus the merged puddle. For now the spill grade is just the worse of the two streams.
+- **Pipe bomb (shop item, unlocked by the achievement):** single use, leaves the inventory when used, cheaper than most items and rebuyable.
+  - The pipe on the bomb's tile is destroyed, leaving a scorch mark (no un-pickupable halves to get stuck on).
+  - The surrounding pieces are knocked off their brackets and become loose pieces.
+  - Bombing a pipe with liquid in it bursts it and ends the run (counts toward the burst stat).
+  - Critters in the blast get a short stun (the stun state is also needed for debuffs later).
+
 ### Filter future ("pie in the sky")
+- **Liquid chain ideas:** VOID purifies to IRRADIATED and IRRADIATED to TOXIC SLIME, so the nastiest liquids take the longest to clean. PRIMORDIAL SOUP / DARK MATTER as named stops before the ??? chain's `+` begins. Maybe fold VOID into the ??? world.
 - More purity effects per grade, and very pure water being valuable, possibly tied to **etching silicon wafers**.
 - Maybe a visual cue for which outlet purifies (e.g. a blue band on the clockwise arm once liquid enters), if the clockwise rule isn't readable.
 - **Liquid proximity effects** (liquids affecting nearby things) and the "filter split" idea around them.
@@ -242,6 +256,14 @@ Unlocks get a banner and appear on the results monitor (NEW! rows first).
 - **Level-select hall:** a long room where the teleporters for unlocked chambers **rise from the floor in a grid** as you enter (mini teleporter booths, each showing its chamber number and liquid color). The big teleporter stays as "continue". Picking works like now: everyone stands on one. *(Alternative: one teleporter with a chamber dial/lever.)* Currently the base only offers FROM THE TOP and CONTINUE.
 - **Display wall** in the base of locked or unaffordable items (glass cases with prices and "???" silhouettes).
 - **Practice corner** (the base board already works in free play; a dedicated small board was suggested).
+
+### Chambers and endless mode
+- **Scripted chambers to 10, then endless:** 1–10 are hand-designed and teach one piece or mechanic at a time. After that, endless generates chambers that each change one thing: pressure speed, piece mix, dead cells, a second spout or drain. "Deepest chamber reached" goes in the almanac.
+- **Growing the grid, with a cap:** add a row or column every few chambers, and refit the fixed camera to the board each round. Stop at the largest size where the placed piece and the critter still read at a glance (check with screenshots). Past the cap, difficulty comes from constraints instead. First check whether room geometry (walls, spout and drain placement) assumes a fixed board size.
+- **Follow camera: later, if ever.** A full chase cam hides the whole route (the puzzle), the placement preview and off-screen leaks. If the size cap proves too small, try a camera that frames the board but leans toward the critter.
+- **Dead cells / blockers:** tiles you can't build on, which force longer routes. Ideas: a **hole in the floor** (maybe dropped or carried pieces fall in), or a **giant futuristic, alien or monster thing** taking up one or more tiles.
+- **Blockers with an area effect:** a blocker can affect the tiles around it and **change the liquid flowing near it**: e.g. freeze it (slower flow), boil it (faster, steam), contaminate it (toxic), purify it, or charge it. Route past it for the bonus, or around it to avoid the penalty. This is the same idea as "Liquid proximity effects" under Filter future, so build them as one system.
+- **Money curve:** if endless pays more as chambers get harder, plan the payout curve in the money rebalance so it doesn't run away by chamber 30.
 
 ### Characters and cosmetics
 - **Remaining species from the list:** **gremlin** and **robot** (square robot). The **human** is parked (uncanny valley).
@@ -259,6 +281,7 @@ Unlocks get a banner and appear on the results monitor (NEW! rows first).
 
 ## 5. Known things to verify in playtests
 
+- Pipe burst: do the torn ends read at gameplay distance on straights, corners, both cross channels and filter arms? Is the panic warning now on time when outlets are routed into each other?
 - Filter: is the clockwise-purifies rule readable? Do two streams feel good-hectic? Does the canister sit well next to crosses when walking over?
 - Lethal drink flow (grade 3), contaminated sip effects, Funnel catching the right stream.
 - Crossing Sign tags (they now persist for the whole belt ride).

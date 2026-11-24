@@ -12,7 +12,7 @@ namespace UnderPressure
         public static Sfx I;
 
         public AudioClip pickup, thunk, clank, ratchet, pop, bloop, loop, coin, spill, fanfare, tick, whoosh, hop, nope, rotate, splat;
-        public AudioClip creak, clunk, land, waste, yoink, alarm, hum, zap, thunder, materialize, moneyTick;
+        public AudioClip creak, clunk, land, waste, yoink, alarm, hum, zap, thunder, materialize, moneyTick, moneyTickDown;
         public AudioClip[] grunts;
 
         AudioSource[] sources;
@@ -184,6 +184,13 @@ namespace UnderPressure
                 float pulse = (ph - Mathf.Floor(ph)) < 0.25f ? 1f : -1f;
                 return pulse * Mathf.Exp(-t * 70f) * 0.22f;
             });
+            // spending: a 50% square an octave and a bit lower (C6 sliding down to G5), so it reads as "draining"
+            moneyTickDown = Make("moneyTickDown", 0.05f, t =>
+            {
+                float ph = 1046.5f * t - (1046.5f - 784f) * t * t / (2f * 0.05f);
+                float sq = (ph - Mathf.Floor(ph)) < 0.5f ? 1f : -1f;
+                return sq * Mathf.Exp(-t * 60f) * 0.18f;
+            });
 
             // Little monster grunts: "hup!", "hnf!", "hah!" — formant-filtered glottal buzz.
             grunts = new[]
@@ -194,12 +201,16 @@ namespace UnderPressure
             };
         }
 
-        /// <summary>The money counter's tick, on its own source so rapid ticks never cut off other sounds.</summary>
-        public static void PlayTick(float volume, float pitch)
+        /// <summary>
+        /// The money counter's tick, on its own source so rapid ticks never cut off other sounds.
+        /// 'spending' uses the lower, falling blip so losing money never sounds like winning it.
+        /// </summary>
+        public static void PlayTick(float volume, float pitch, bool spending = false)
         {
-            if (I == null || I.moneyTick == null) return;
+            var clip = I == null ? null : spending ? I.moneyTickDown : I.moneyTick;
+            if (clip == null) return;
             I.tickSource.pitch = pitch;
-            I.tickSource.PlayOneShot(I.moneyTick, volume * (Game.Config != null ? Game.Config.sfxVolume : 0.8f));
+            I.tickSource.PlayOneShot(clip, volume * (Game.Config != null ? Game.Config.sfxVolume : 0.8f));
         }
 
         public static AudioClip RandomGrunt() =>

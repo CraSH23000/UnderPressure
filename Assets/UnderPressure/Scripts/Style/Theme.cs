@@ -50,8 +50,12 @@ namespace UnderPressure
         public static void ApplyLiquid(int chamber, GameConfig cfg)
         {
             if (cfg == null || cfg.liquids == null || cfg.liquids.Length == 0) return;
-            LiquidType pick = cfg.liquids[0];
-            foreach (var l in cfg.liquids) if (l != null && chamber >= l.fromChamber && l.fromChamber >= pick.fromChamber) pick = l;
+            // only entries with a fromChamber come out of a spout (fromChamber 0 = made by filters only)
+            LiquidType pick = null;
+            foreach (var l in cfg.liquids)
+                if (l != null && l.fromChamber > 0 && (pick == null || (chamber >= l.fromChamber && l.fromChamber >= pick.fromChamber))) pick = l;
+            if (pick == null) pick = cfg.liquids[0];
+            Mats.LiquidId = System.Array.IndexOf(cfg.liquids, pick) + 1;
             Mats.Liquid = pick.color;
             Mats.LiquidGlow = pick.glow;
             Mats.LiquidName = string.IsNullOrEmpty(pick.name) ? "LIQUID" : pick.name;

@@ -26,6 +26,8 @@ namespace UnderPressure
         public readonly List<PipeChannel> channels = new List<PipeChannel>();
         public readonly List<Transform> staples = new List<Transform>();
         public readonly Dictionary<Dir, Transform> clamps = new Dictionary<Dir, Transform>();
+        /// <summary>Each opening's flange and dark mouth disc (local direction), e.g. to blow a cross's bridge away.</summary>
+        public readonly Dictionary<Dir, List<GameObject>> openingParts = new Dictionary<Dir, List<GameObject>>();
     }
 
     public static class PipeBuilder
@@ -221,9 +223,11 @@ namespace UnderPressure
             {
                 Vector3 dv = DirUtil.ToVector3(d);
                 Vector3 edge = dv * S * 0.5f + Vector3.up * h;
-                m.flanges.Add(Prims.Segment(m.root, edge - dv * 0.07f * S, edge, r * 1.25f, flange, 1f).GetComponent<Renderer>());
+                var flangeGo = Prims.Segment(m.root, edge - dv * 0.07f * S, edge, r * 1.25f, flange, 1f);
+                m.flanges.Add(flangeGo.GetComponent<Renderer>());
                 // the pipe's opening: a dark disc just proud of the flange face (it tucks inside a neighbour's flange)
-                Prims.Segment(m.root, edge - dv * 0.004f, edge + dv * 0.012f, r * 0.82f, overrideMat != null ? overrideMat : Mats.Lit(Theme.Ink, 0.4f), 1f);
+                var mouth = Prims.Segment(m.root, edge - dv * 0.004f, edge + dv * 0.012f, r * 0.82f, overrideMat != null ? overrideMat : Mats.Lit(Theme.Ink, 0.4f), 1f);
+                m.openingParts[d] = new List<GameObject> { flangeGo.gameObject, mouth.gameObject };
 
                 var clampRoot = Prims.Empty("Clamp_" + d, m.root, edge - dv * 0.085f * S).transform;
                 clampRoot.localRotation = Quaternion.LookRotation(dv);

@@ -5,8 +5,9 @@ using UnityEngine.InputSystem;
 namespace UnderPressure
 {
     /// <summary>
-    /// Drop-in co-op: Space (WASD side), Enter (arrow side) or (A) on any gamepad joins a new player, up to 4.
-    /// Lives on the bootstrap object so joined players survive a level restart.
+    /// Drop-in co-op: Space (WASD side), Enter (arrow side), or (A), (X) or Start on any gamepad joins a new player,
+    /// up to 4. Players can leave from the pause menu. Lives on the bootstrap object so joined players survive a
+    /// level restart.
     /// </summary>
     public class JoinManager : MonoBehaviour
     {
@@ -85,8 +86,35 @@ namespace UnderPressure
             foreach (var gp in Gamepad.all)
             {
                 if (Slots.Count >= MaxPlayers) break;
-                if ((gp.buttonSouth.wasPressedThisFrame || gp.buttonWest.wasPressedThisFrame) && !HasDevice(gp)) Join(ControlScheme.Gamepad, gp);
+                if ((gp.buttonSouth.wasPressedThisFrame || gp.buttonWest.wasPressedThisFrame || gp.startButton.wasPressedThisFrame) && !HasDevice(gp))
+                    Join(ControlScheme.Gamepad, gp);
             }
+        }
+
+        int joinFrame = -1;
+        InputDevice joinDevice;
+
+        /// <summary>
+        /// Start on a controller with nobody playing on it joins them (it doesn't open the menu). True for that
+        /// press: a free controller while there's room, or one that joined on this very frame.
+        /// </summary>
+        public bool StartJoins(InputDevice d) =>
+            d is Gamepad && ((!HasDevice(d) && Slots.Count < MaxPlayers) || (d == joinDevice && joinFrame == Time.frameCount));
+
+        /// <summary>A player leaves: they poof away and their slot (and controls) are free for someone else.</summary>
+        public void Leave(int slotIndex)
+        {
+            var slot = SlotOf(slotIndex);
+            if (slot == null) return;
+            Slots.Remove(slot);
+            var p = Game.Players.Find(pl => pl != null && pl.Index == slotIndex);
+            if (p != null)
+            {
+                Game.Players.Remove(p);
+                p.Leave();
+            }
+            Game.Hud?.SetRoster(Game.Players);
+            Banner.Show($"P{slotIndex + 1} LEFT", slot.Color, 80, 0.9f, -40f);
         }
 
         bool HasScheme(ControlScheme s)
@@ -107,6 +135,8 @@ namespace UnderPressure
             while (Slots.Exists(s => s.index == index)) index++;
             var slot = new Slot { index = index, scheme = scheme, device = device };
             Slots.Add(slot);
+            joinFrame = Time.frameCount;
+            joinDevice = device;
             Game.Bootstrap.SpawnPlayer(slot, true);
         }
 

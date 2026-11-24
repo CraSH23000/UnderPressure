@@ -41,9 +41,9 @@ MonoBehaviour:
   beltSlowPenalty: 0
   flowBonusPerExtraSpeed: 0.2
   beltSpeed: 0.2
-  beltSpacing: 2
-  beltPrefill: 0.3
-  spawnBag: 0000000000000000000000000100000001000000010000000100000002000000i
+  beltSpacing: 1.8
+  beltPrefill: 0.4
+  spawnBag: 0000000000000000000000000000000001000000010000000100000001000000010000000200000002000000i
   beltSpeedSteps:
   - 0.25
   - 0.5
@@ -92,6 +92,10 @@ MonoBehaviour:
   crossingSignPrice: 3000
   crossingSignBoost: 0.25
   filterPrice: 400
+  serumPrice: 1800
+  serumCharges: 4
+  serumRefillPrice: 500
+  spoonPrice: 2500
   filterFromChamber: 4
   filterGradeBonus: 0.5
   inventoryWidth: 600
@@ -103,30 +107,91 @@ MonoBehaviour:
   pitRespawnDelay: 1.6
   startInBase: 1
   freePitInBase: 1
-  baseVendingMachines: 4
-  grimePerChamber: 0.2
+  baseVendingMachines: 6
+  grimePerChamber: 0.1
   readyCountdownSeconds: 3
   liquids:
   - name: WATER
     fromChamber: 1
     color: {r: 0.55, g: 0.85, b: 1, a: 1}
     glow: {r: 0.25, g: 0.6, b: 1.3, a: 1}
+    purifiesTo: FILTERED WATER
+    concentratesTo: DIRTY WATER
+  - name: DIRTY WATER
+    fromChamber: 0
+    color: {r: 0.42, g: 0.52, b: 0.4, a: 1}
+    glow: {r: 0.22, g: 0.32, b: 0.18, a: 1}
+    purifiesTo: WATER
+    concentratesTo: SLIME
+  - name: SLIME
+    fromChamber: 4
+    color: {r: 0.45, g: 0.72, b: 0.28, a: 1}
+    glow: {r: 0.3, g: 0.95, b: 0.2, a: 1}
+    purifiesTo: DIRTY WATER
+    concentratesTo: TOXIC SLIME
   - name: TOXIC SLIME
     fromChamber: 4
     color: {r: 0.25, g: 1, b: 0.45, a: 1}
     glow: {r: 0.3, g: 2.2, b: 0.7, a: 1}
+    purifiesTo: SLIME
+    concentratesTo: TOXIC SLIME+
   - name: IRRADIATED
     fromChamber: 6
     color: {r: 0.75, g: 1, b: 0.15, a: 1}
     glow: {r: 1.8, g: 3.2, b: 0.3, a: 1}
+    purifiesTo: FILTERED WATER
+    concentratesTo: IRRADIATED+
   - name: VOID
     fromChamber: 8
     color: {r: 0.03, g: 0.02, b: 0.05, a: 1}
     glow: {r: 0.55, g: 0.15, b: 1.1, a: 1}
+    purifiesTo: FILTERED WATER
+    concentratesTo: VOID+
   - name: ???
     fromChamber: 10
     color: {r: 1, g: 1, b: 1, a: 1}
     glow: {r: 1, g: 1, b: 1, a: 1}
+    purifiesTo: PROTOMATTER
+    concentratesTo: ANTIMATTER
+  - name: PROTOMATTER
+    fromChamber: 10
+    color: {r: 1, g: 0.9, b: 0.62, a: 1}
+    glow: {r: 2.4, g: 1.9, b: 0.9, a: 1}
+    purifiesTo: PROTOMATTER+
+    concentratesTo: ???
+  - name: ANTIMATTER
+    fromChamber: 10
+    color: {r: 0.22, g: 0.02, b: 0.2, a: 1}
+    glow: {r: 1.9, g: 0.15, b: 1.5, a: 1}
+    purifiesTo: ???
+    concentratesTo: ANTIMATTER+
+  - name: FILTERED WATER
+    fromChamber: 0
+    color: {r: 0.58, g: 0.82, b: 1, a: 1}
+    glow: {r: 0.52, g: 0.74, b: 0.9, a: 1}
+    purifiesTo: PURE WATER
+    concentratesTo: WATER
+  - name: PURE WATER
+    fromChamber: 0
+    color: {r: 0.72, g: 0.9, b: 1, a: 1}
+    glow: {r: 1, g: 1.26, b: 1.4, a: 1}
+    purifiesTo: DEIONIZED WATER
+    concentratesTo: FILTERED WATER
+  - name: DEIONIZED WATER
+    fromChamber: 0
+    color: {r: 0.85, g: 0.97, b: 1, a: 1}
+    glow: {r: 1.62, g: 1.84, b: 1.9, a: 1}
+    purifiesTo: ULTRAPURE WATER
+    concentratesTo: PURE WATER
+  - name: ULTRAPURE WATER
+    fromChamber: 0
+    color: {r: 0.94, g: 0.99, b: 1, a: 1}
+    glow: {r: 2.2, g: 2.4, b: 2.5, a: 1}
+    purifiesTo: ULTRAPURE WATER+
+    concentratesTo: DEIONIZED WATER
+  spoutHologramScale: 1.15
+  filterLabelScale: 1
+  filterLabelShowsMultiplier: 0
   gameplayCameraPitch: 48
   gameplayCameraZoom: 0.85
   intermissionCameraPitch: 27
@@ -150,6 +215,16 @@ MonoBehaviour:
   musicPitchSemitones: -3
   musicSpeed: 0.84
   musicPanicVolume: 1.4
+  musicRealAudio: 1
+  musicSong: Overflow
+  musicStemLeadLayers: vocals
+  musicStemLeadInChambers: 0
+  musicStemFixedLayers: drums
   screenShakeScale: 1
   hitStop: 1
   sfxVolume: 0.8
+  moneyTickSound: 1
+  moneyTickVolume: 0.5
+  moneyTicksPerSecond: 30
+  moneyCountMaxSeconds: 2.5
+  moneyCountRamp: 1.18

@@ -129,7 +129,8 @@ namespace UnderPressure
             if (Paused) return; // the pause menu (PauseMenu, on the HUD) owns pausing now
 
             int joined = Game.Players.Count;
-            hud.SetJoinPrompt(joined >= JoinManager.MaxPlayers || joined == 0 ? "" : $"P{joined + 1} join: (A) · Space · Enter");
+            hud.SetJoinPrompt(joined > 0 && joined < JoinManager.MaxPlayers);
+            hud.ShowDistance(!InLobby);
 
             if (Current == State.Flowing)
             {
@@ -162,11 +163,10 @@ namespace UnderPressure
                     if (Panic)
                     {
                         int left = flow.PiecesAhead;
-                        holo.Set(left == 0 ? "LEAK!" : $"LEAK IN {left}!", "lay pipe ahead!", Distance, cfg.goalDistance, true);
+                        holo.Set(left == 0 ? "LEAK!" : $"LEAK IN {left}!", "lay pipe ahead!", true);
                     }
                     else
-                        holo.Set("FLOWING", $"flow x{flow.SpeedMultiplier:0.##}" + (cfg.moneyScalesWithFlowSpeed ? $"  ·  ${PieceValue()}/pipe" : ""),
-                            Distance, cfg.goalDistance, false);
+                        holo.Set("", SpoutHologram.LiquidName, false, SpoutHologram.LiquidTextColor, FlowInfo());
                     UpdateLiveMonitor();
                     break;
                 case State.Lobby:
@@ -204,7 +204,7 @@ namespace UnderPressure
             int whole = Mathf.CeilToInt(Mathf.Max(0f, countdown));
             bool urgent = whole <= 5;
             hud.SetTimer("", "", Color.white);
-            board.Spout.Hologram.Set($"FLOW IN {whole}", $"flow x{flow.SpeedMultiplier:0.##}  ·  [Use] valve", Distance, cfg.goalDistance, urgent);
+            board.Spout.Hologram.Set(whole.ToString(), SpoutHologram.LiquidName, urgent, SpoutHologram.LiquidTextColor, FlowInfo());
             UpdateLiveMonitor();
             if (whole != lastWholeSecond)
             {
@@ -380,16 +380,33 @@ namespace UnderPressure
             Game.Conveyor?.ResetSpeed(); // off the clock: idle speed, lever back to default (still usable)
             Progress.OnSpill(pos, dir);
             FunnelCatch(pos, dir);
-            board.Spout.Hologram.Set(Current == State.Won ? "PASSED" : "SPILLED", "", Distance, cfg.goalDistance, Current != State.Won);
+            board.Spout.Hologram.Set(Current == State.Won ? "PASSED" : "SPILLED", "", Current != State.Won);
             Juice.SlowMo(0.25f, 0.9f);
-            Juice.Shake(0.55f);
-            Fx.Burst(pos, Mats.Liquid, new Color(0.7f, 1f, 0.75f), 45, 5.5f, 0.24f, 0.9f, 2.2f, true,
-                ParticleSystemShapeType.Cone, 0.1f, Quaternion.LookRotation(dir + Vector3.up * 0.6f));
+            if (flow.LastSpillBurst)
+            {
+                // two streams met head-on: the pipe blew open, spraying out of both torn ends
+                Juice.Shake(0.8f);
+                Game.Cam?.FovPunch(-4f);
+                var axis = flow.BurstAxis;
+                for (int s = -1; s <= 1; s += 2)
+                    Fx.Burst(pos, Mats.Liquid, new Color(0.7f, 1f, 0.75f), 35, 6f, 0.24f, 0.9f, 2.2f, true,
+                        ParticleSystemShapeType.Cone, 0.1f, Quaternion.LookRotation(axis * s + Vector3.up * 0.8f));
+                Fx.Sparks(pos, 20, 7f);
+                Banner.Show(flow.LastBurstFilter ? "FILTER SHATTERED!" : "PIPE BURST!", Mats.Danger, 120, 1.4f);
+                Progress.AddTeam(Progress.TeamPipeBursts);
+            }
+            else
+            {
+                Juice.Shake(0.55f);
+                Fx.Burst(pos, Mats.Liquid, new Color(0.7f, 1f, 0.75f), 45, 5.5f, 0.24f, 0.9f, 2.2f, true,
+                    ParticleSystemShapeType.Cone, 0.1f, Quaternion.LookRotation(dir + Vector3.up * 0.6f));
+            }
             Sfx.Play(Sfx.I != null ? Sfx.I.spill : null, 1f, 1f, 0f);
             Sfx.Play(Sfx.I != null ? Sfx.I.splat : null, 0.8f);
 
-            // a wobbly blob of whatever was in the pipes
-            SlimePuddle.Spawn(new Vector3(pos.x + dir.x * 0.7f, 0f, pos.z + dir.z * 0.7f), dir);
+            // a wobbly blob of whatever was in the pipes (a burst puddles right under the tear)
+            float off = flow.LastSpillBurst ? 0f : 0.7f;
+            SlimePuddle.Spawn(new Vector3(pos.x + dir.x * off, 0f, pos.z + dir.z * off), flow.LastSpillBurst ? flow.BurstAxis : dir);
 
             Juice.Delay(0.6f, BeginIntermission);
         }
@@ -422,6 +439,9 @@ namespace UnderPressure
         bool lobbyCam;
         float baseMonitorT;
 
+        /// <summary>The spout hologram's small line: flow speed and (if it scales with speed) the pay per pipe.</summary>
+        string FlowInfo() => $"flow x{flow.SpeedMultiplier:0.##}" + (cfg.moneyScalesWithFlowSpeed ? $"  ·  ${PieceValue()}/pipe" : "");
+
         void UpdateLobby()
         {
             board.Spout.Pressure = 0f;
@@ -429,13 +449,13 @@ namespace UnderPressure
             {
                 float pulse = 0.75f + 0.25f * Mathf.Sin(Time.unscaledTime * 4f);
                 hud.SetTimer("PRESS (A) / SPACE / ENTER", $"to join · up to {JoinManager.MaxPlayers} players", new Color(1f, 1f, 1f, pulse));
-                board.Spout.Hologram.Set("PRACTICE", "no clock at the base", 0, cfg.goalDistance, false);
+                board.Spout.Hologram.Set("PRACTICE", "no clock at the base", false);
                 UpdateBaseMonitor();
                 return;
             }
             if (!lobbyCam && Game.Cam != null && Game.Monitor != null) { lobbyCam = true; Game.Cam.BeginFollow(Game.Monitor.Center); }
             if (pads.Count == 0) CreateBasePads();
-            board.Spout.Hologram.Set("PRACTICE", "no clock at the base", 0, cfg.goalDistance, false);
+            board.Spout.Hologram.Set("PRACTICE", "no clock at the base", false);
             UpdateBaseMonitor();
             UpdateTeleporters();
         }

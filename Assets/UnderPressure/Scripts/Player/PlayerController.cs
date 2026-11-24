@@ -185,6 +185,18 @@ namespace UnderPressure
         public void Cheer() => rig.Cheer();
         public void Sad() => rig.Sad();
 
+        /// <summary>This player left the game (pause menu): drop what's in hand, poof, and go.</summary>
+        public void Leave()
+        {
+            if (Held != null) DropHeld();
+            Fx.Puff(Pos + Vector3.up * 0.5f, Color.white, 1.2f);
+            Fx.Confetti(Pos + Vector3.up, 16, 4f);
+            Sfx.Play(Sfx.I != null ? Sfx.I.pop : null, 0.8f, 0.8f);
+            Game.Hud?.HideProgress(Index);
+            if (preview != null) Destroy(preview.gameObject);
+            Destroy(gameObject);
+        }
+
         void OnDestroy()
         {
             if (closet != null) closet.Release(this, false);
@@ -326,10 +338,32 @@ namespace UnderPressure
             dashT = cfg.dashDistance * (buffT > 0f ? buffDashDist : 1f) / Mathf.Max(0.1f, cfg.dashSpeed);
             dashCooldownT = cfg.dashCooldown + dashT;
             dashChargesLeft--; // with a sip of water you get a second one before the cooldown
+            if (Items.TeamOwns(Items.Spoon))
+            {
+                // pipes aren't real: the climbing layer passes through placed pipes (and loose ones)
+                phasing = true; phasedThrough = false; phaseExtra = 0f;
+                gameObject.layer = Layers.PlayerClimbing;
+            }
             sprintDustTimer = 0f;
             rig.Squash(-0.3f);
             Fx.Puff(Pos - dashDir * 0.25f + Vector3.up * 0.1f, Color.Lerp(Theme.Floor, Color.white, 0.5f), 0.3f);
             Sfx.Play(Sfx.I != null ? Sfx.I.whoosh : null, 0.55f, 1.35f, 0.08f);
+        }
+
+        bool InsidePipe() =>
+            Physics.CheckSphere(Pos + Vector3.up * 0.3f, cc.radius * 0.9f, 1 << Layers.PlacedPipes, QueryTriggerInteraction.Ignore);
+
+        void EndPhase()
+        {
+            phasing = false;
+            if (mode == Mode.Walk && gameObject.layer == Layers.PlayerClimbing) gameObject.layer = Layers.Player;
+            if (phasedThrough)
+            {
+                // a little silver shimmer: you went straight through it
+                Fx.Burst(Pos + Vector3.up * 0.4f, new Color(0.85f, 0.9f, 1f), Color.white, 8, 1.5f, 0.05f, 0.4f, 0.3f);
+                Sfx.Play(Sfx.I != null ? Sfx.I.whoosh : null, 0.35f, 1.9f, 0.05f);
+            }
+            if (mode == Mode.Walk && InsidePipe()) NudgeOutOf(board.WorldToCell(Pos)); // gave up halfway (e.g. a wall): pop out
         }
 
         Vector3 HoldPoint() => Pos + facing * rig.HoldReach + Vector3.up * (rig.HoldHeight + height + jumpH);
@@ -338,7 +372,7 @@ namespace UnderPressure
 
         void Locomotion(Vector3 wish, float dt)
         {
-            float mult = mode == Mode.Crawl ? cfg.crawlSpeedMultiplier : (Airborne ? 1f : LooseMultiplier(dt));
+            float mult = mode == Mode.Crawl ? (SerumActive ? 1f : cfg.crawlSpeedMultiplier) : (Airborne ? 1f : LooseMultiplier(dt));
             if (sprinting) mult *= cfg.sprintMultiplier;
             if (buffT > 0f) mult *= buffSpeed; // a sip from the bottle
             Vector3 target = wish * cfg.walkSpeed * mult;
@@ -349,7 +383,16 @@ namespace UnderPressure
                 vel = dashDir * cfg.dashSpeed;
                 facing = dashDir;
                 wish = Vector3.zero;
+                if (phasing)
+                {
+                    bool inside = InsidePipe();
+                    phasedThrough |= inside;
+                    // don't stop inside a pipe: carry on until we're out the other side (or give up and get nudged out)
+                    if (dashT <= 0f && inside && phaseExtra < 0.4f) { dashT = dt; phaseExtra += dt; }
+                    if (dashT <= 0f) EndPhase();
+                }
             }
+            else if (phasing) EndPhase();
             else vel = Vector3.MoveTowards(vel, target, cfg.acceleration * dt);
 
             if (wish.sqrMagnitude > 0.01f)
@@ -368,6 +411,8 @@ namespace UnderPressure
             {
                 height = Mathf.Lerp(height, Airborne ? 0f : CrossHeight(Pos), 1f - Mathf.Exp(-16f * dt));
                 if (!Airborne && wish.sqrMagnitude > 0.04f) TryRampOntoPipes(wish);
+                autoClimbCooldown -= dt;
+                if (mode == Mode.Walk && SerumActive && !Airborne && wish.sqrMagnitude > 0.25f && autoClimbCooldown <= 0f) TryAutoClimb(wish);
             }
 
             if (mode == Mode.Crawl)
@@ -375,6 +420,8 @@ namespace UnderPressure
                 var underCell = board.WorldToCell(Pos);
                 var under = board.Get(underCell);
                 if (under == null || under.State != PieceState.Placed) StartClimbDown();
+                // crawled off the side of the tube onto its bare plate: you're past it, back on your feet
+                else if (under.Type != PipeType.Cross && !under.FootprintHits(board.CellCenter(underCell), Pos, cc.radius * 0.5f)) StartClimbDown();
                 else if (under.Type == PipeType.Cross && Mathf.Max(Mathf.Abs(Pos.x - board.CellCenter(underCell).x), Mathf.Abs(Pos.z - board.CellCenter(underCell).z)) < S * 0.2f)
                 {
                     // crawled back onto a cross: it's a ramp again, walk down it
@@ -539,6 +586,12 @@ namespace UnderPressure
             Vector3 dv = DirUtil.ToVector3(d);
             Vector2Int front = board.WorldToCell(Pos + dv * S * 0.62f);
             var p = board.Get(front);
+            // the tube right in front of us wins: now that plates are walkable it can be in the tile we're standing on
+            if (Physics.Raycast(Pos + Vector3.up * 0.3f, dv, out var hit, cc.radius + S * 0.4f, 1 << Layers.PlacedPipes, QueryTriggerInteraction.Ignore))
+            {
+                var hp = hit.collider.GetComponentInParent<PipePiece>();
+                if (hp != null && hp.State == PieceState.Placed) { p = hp; front = hp.Cell; }
+            }
             if (p == null || p.State != PieceState.Placed || p.Type == PipeType.Cross) return false; // crosses: just walk over
 
             Vector3 c = board.CellCenter(front);
@@ -554,7 +607,7 @@ namespace UnderPressure
             if (landingOk)
             {
                 // single pipe: quick vault over the top
-                StartScripted(Mode.Vault, landing, cfg.vaultSeconds, 0f, p.TopHeight + 0.4f);
+                StartScripted(Mode.Vault, landing, ClimbSeconds(cfg.vaultSeconds, landing, 0.22f), 0f, p.TopHeight + 0.4f);
                 CountWaterHop(p);
                 rig.Squash(-0.35f);
                 Sfx.Play(Sfx.RandomGrunt(), 0.7f, GruntPitch(0.95f));
@@ -562,11 +615,37 @@ namespace UnderPressure
             else
             {
                 // a run of pipes: clamber on top and crawl ("difficult terrain")
-                StartScripted(Mode.ClimbUp, c + lateral - dv * S * 0.18f, cfg.climbUpSeconds, p.TopHeight, 0.25f);
+                // land on top of the tube itself (the plate around it is walkable now, so that's where crawling ends)
+                Vector3 onTop = p.NearestTubePoint(c + lateral - dv * S * 0.18f);
+                StartScripted(Mode.ClimbUp, onTop, ClimbSeconds(cfg.climbUpSeconds, onTop, 0.15f), p.TopHeight, 0.25f);
                 rig.Squash(-0.25f);
                 Sfx.Play(Sfx.RandomGrunt(), 0.7f, GruntPitch(0.85f));
             }
             return true;
+        }
+
+        /// <summary>Spider Monkey Serum: walking into a pipe climbs or vaults it, no jump needed.</summary>
+        void TryAutoClimb(Vector3 wish)
+        {
+            Vector3 w = wish.normalized;
+            if (!Physics.Raycast(Pos + Vector3.up * 0.3f, w, out var hit, cc.radius + 0.15f, 1 << Layers.PlacedPipes, QueryTriggerInteraction.Ignore)) return;
+            var hp = hit.collider.GetComponentInParent<PipePiece>();
+            if (hp == null || hp.State != PieceState.Placed || hp.Type == PipeType.Cross) return;
+            Vector3 was = facing;
+            facing = w;
+            if (TryClimbOrVault()) autoClimbCooldown = 0.25f;
+            else facing = was;
+        }
+
+        /// <summary>
+        /// How long a vault or climb takes: the configured time, or with the serum, as long as walking that far would
+        /// (the same animation, just at walking pace).
+        /// </summary>
+        float ClimbSeconds(float configured, Vector3 to, float min)
+        {
+            if (!SerumActive) return configured;
+            float speed = cfg.walkSpeed * (buffT > 0f ? buffSpeed : 1f);
+            return Mathf.Clamp(FlatDist(Pos, to) / Mathf.Max(0.1f, speed), min, configured);
         }
 
         void StartClimbDown()
@@ -1185,6 +1264,15 @@ namespace UnderPressure
 
         // what the current sip does (clean water, or whatever the funnel caught)
         float buffSpeed = 1f, buffDashDist = 1f, hiccupT;
+
+        // Spider Monkey Serum: one dose lasts the room it was drunk in (a new room has a new GameManager)
+        GameManager serumFor;
+        float autoClimbCooldown;
+        bool SerumActive => serumFor != null && serumFor == Game.Manager;
+
+        // Spoon: a dash that ignores pipes (pipes aren't real); it keeps going until we're out of the one we're in
+        bool phasing, phasedThrough;
+        float phaseExtra;
         int buffDashes = 1;
         bool buffHiccups;
         Color buffColor = new Color(0.5f, 0.85f, 1f);
@@ -1201,13 +1289,14 @@ namespace UnderPressure
             buffColor = new Color(0.5f, 0.85f, 1f);
             string m = (mix ?? "").ToUpperInvariant();
             if (m.Length == 0) return null;
-            // filter grade 3 of anything is lethal
-            if (m.Contains("DEIONIZED") || m.Contains("HYPER-CONCENTRATED")) { sipLethal = true; return m.Contains("DEIONIZED") ? "TOO... PURE..." : "TOO... STRONG..."; }
+            // three '+' (or deionized) is lethal
+            int plus = LiquidGrade.Pluses(m);
+            if (m.Contains("DEIONIZED") || plus >= 3) { sipLethal = true; return m.Contains("DEIONIZED") || m.Contains("WATER") ? "TOO... PURE..." : "TOO... STRONG..."; }
             // filtered water: the purer, the better
             if (m.Contains("PURE WATER")) { buffSpeed = sp + 0.3f; buffDashes = dashes + 1; buffDashDist = 1.3f; buffColor = new Color(0.85f, 0.97f, 1f); return "CRISP!"; }
             if (m.Contains("FILTERED WATER")) { buffSpeed = sp + 0.15f; buffDashes = dashes + 1; buffColor = new Color(0.55f, 0.85f, 1f); return "REFRESHING!"; }
-            // concentrates hit harder: x2, x3
-            int k = m.Contains("DOUBLE-CONCENTRATED") ? 3 : m.Contains("CONCENTRATED") ? 2 : 1;
+            // concentrates hit harder: + is x2, ++ is x3
+            int k = 1 + plus;
             if (m.Contains("TOXIC"))
             {
                 // zippy and jittery, with the hiccups
@@ -1328,12 +1417,14 @@ namespace UnderPressure
                 v.detailName = sel.name;
                 v.detailIcon = sel.icon;
                 v.detailBody = sel.description;
+                if (!string.IsNullOrEmpty(sel.effect)) v.detailBody += $"\n<color=#FD6>{sel.effect}</color>";
                 if (sel.hasCharges) v.detailBody += $" <color=#9EF>{Items.Charges(Index, sel.id)}/{Items.MaxCharges(sel.id)} left</color>";
                 if (sel.id == Items.Backpack)
                     v.detailBody += $"\n<color=#9EF>{PackCount}/{Backpacks.Capacity} carried</color>  <color=#FD6>LV {Items.Level(sel.id)}: {Backpacks.StageName(Items.Level(sel.id))}</color>";
                 v.detailUseKey = sel.active && b >= 0 ? input.ItemLabel(b) : null;
                 v.detailNote = !sel.active ? sel.passiveLabel : b < 0 ? "Not on a button yet" : null;
                 if (sel.id == Items.WaterBottle && Items.BottleMix(Index).Length > 0) v.detailNote = $"Contaminated: {Items.BottleMix(Index)}";
+                if (sel.id == Items.SpiderSerum && SerumActive) v.detailNote = "Active for this chamber";
             }
             invPanel.Show(Pos + Vector3.up * (rig.Height + 0.25f), v);
         }
@@ -1355,6 +1446,7 @@ namespace UnderPressure
         void UseItem(ItemDef d)
         {
             if (d.id == Items.Backpack) { PackButton(); return; }
+            if (d.id == Items.SpiderSerum) { DrinkSerum(d); return; }
             if (d.id != Items.WaterBottle) return;
             if (rig.Sipping) return; // one sip at a time
             int c = Items.Charges(Index, d.id);
@@ -1373,6 +1465,31 @@ namespace UnderPressure
             rig.Sip((grip, scale) => VendingMachine.MakeBottle(grip, new Vector3(0f, -0.095f * scale, 0f), scale));
             Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.35f), $"SIP!  {c - 1} LEFT", new Color(0.5f, 0.85f, 1f), 36, 1.1f);
             Sfx.Play(Sfx.I != null ? Sfx.I.bloop : null, 0.6f, 1.3f);
+        }
+
+        void DrinkSerum(ItemDef d)
+        {
+            if (rig.Sipping) return;
+            Vector3 above = Pos + Vector3.up * (rig.Height + 0.3f);
+            if (SerumActive)
+            {
+                Nope();
+                Popup.Spawn(above, "ALREADY OOK-ING", new Color(0.95f, 0.45f, 0.85f), 30, 0.9f);
+                return;
+            }
+            int c = Items.Charges(Index, d.id);
+            if (c <= 0)
+            {
+                Nope();
+                Popup.Spawn(above, "NO SERUM LEFT", Mats.Danger, 32, 0.9f);
+                return;
+            }
+            Items.SetCharges(Index, d.id, c - 1);
+            serumFor = Game.Manager;
+            rig.Sip((grip, scale) => VendingMachine.MakeSerum(grip, new Vector3(0f, -0.08f * scale, 0f), scale));
+            Popup.Spawn(above + Vector3.up * 0.05f, $"GULP!  {c - 1} LEFT", new Color(0.95f, 0.45f, 0.85f), 36, 1.1f);
+            Juice.Delay(0.9f, () => { if (this != null) Popup.Spawn(Pos + Vector3.up * (rig.Height + 0.6f), "OOK OOK!", new Color(0.95f, 0.45f, 0.85f), 36, 1.3f); });
+            Sfx.Play(Sfx.I != null ? Sfx.I.bloop : null, 0.6f, 0.9f);
         }
 
         void UpdateBuff(float dt)
@@ -1621,7 +1738,13 @@ namespace UnderPressure
             if (actPiece != null) actPiece.Spring.Squash(0.12f);
         }
 
-        /// <summary>If a freshly placed pipe overlaps the player, step the player out of its footprint.</summary>
+        /// <summary>Does the pipe being installed in this cell overlap the critter? (Only the tube blocks, not the plate.)</summary>
+        bool PipeOverlapsMe(Vector2Int cell)
+        {
+            var piece = board.Get(cell);
+            return piece == null || piece.FootprintHits(board.CellCenter(cell), Pos, cc.radius);
+        }
+
         /// <summary>
         /// NES-style placing on the tile you stand on: the critter hops off backwards
         /// (or sideways if a pipe is behind it) instead of ending up inside the pipe.
@@ -1629,6 +1752,7 @@ namespace UnderPressure
         void HopOffPlaced(Vector2Int cell)
         {
             if (mode != Mode.Walk) return;
+            if (!PipeOverlapsMe(cell)) return; // standing on the bare plate beside the tube: stay put
             var r = board.CellRect(cell);
             float pad = cc.radius + 0.47f * S - 0.5f * S + 0.04f;
             Vector3 p = Pos;
@@ -1657,6 +1781,7 @@ namespace UnderPressure
         public void NudgeOutOf(Vector2Int cell)
         {
             if (mode != Mode.Walk) return;
+            if (!PipeOverlapsMe(cell)) return;
             var r = board.CellRect(cell);
             float pad = cc.radius + 0.47f * S - 0.5f * S + 0.02f; // collider is 0.94 of the tile
             float xMin = r.xMin - pad, xMax = r.xMax + pad, zMin = r.yMin - pad, zMax = r.yMax + pad;
