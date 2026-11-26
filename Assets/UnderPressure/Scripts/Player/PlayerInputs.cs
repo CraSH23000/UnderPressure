@@ -5,7 +5,7 @@ using UnityEngine.InputSystem.Utilities;
 
 namespace UnderPressure
 {
-    public enum ControlScheme { KeyboardWASD, KeyboardArrows, Gamepad }
+    public enum ControlScheme { KeyboardWASD, KeyboardArrows, Gamepad, Mouse }
 
     /// <summary>
     /// One player's actions, built in code and scoped to one device (or one half of the keyboard),
@@ -18,9 +18,9 @@ namespace UnderPressure
         public readonly InputAction[] ItemButtons = new InputAction[3];
 
         /// <summary>What the item buttons and the inventory button are called for this player's controls.</summary>
-        public string ItemLabel(int i) => Scheme == ControlScheme.Gamepad ? new[] { "RT", "LB", "RB" }[i]
+        public string ItemLabel(int i) => Scheme == ControlScheme.Mouse ? "" : Scheme == ControlScheme.Gamepad ? new[] { "RT", "LB", "RB" }[i]
             : Scheme == ControlScheme.KeyboardWASD ? new[] { "1", "2", "3" }[i] : new[] { "End", "PgDn", "PgUp" }[i];
-        public string InventoryLabel => Scheme == ControlScheme.Gamepad ? "Select" : Scheme == ControlScheme.KeyboardWASD ? "Tab" : "Backspace";
+        public string InventoryLabel => Scheme == ControlScheme.Mouse ? "" : Scheme == ControlScheme.Gamepad ? "Select" : Scheme == ControlScheme.KeyboardWASD ? "Tab" : "Backspace";
         public readonly ControlScheme Scheme;
 
         public PlayerInputs(ControlScheme scheme, InputDevice device)
@@ -72,6 +72,12 @@ namespace UnderPressure
                     ItemButtons[0].AddBinding("<Keyboard>/end");
                     ItemButtons[1].AddBinding("<Keyboard>/pageDown");
                     ItemButtons[2].AddBinding("<Keyboard>/pageUp");
+                    break;
+
+                case ControlScheme.Mouse:
+                    // the ghost: it floats after the cursor (read directly), so there's no Move; scroll rotates (also read directly)
+                    Use.AddBinding("<Mouse>/leftButton");
+                    Jump.AddBinding("<Mouse>/rightButton"); // drop / let go
                     break;
 
                 default:

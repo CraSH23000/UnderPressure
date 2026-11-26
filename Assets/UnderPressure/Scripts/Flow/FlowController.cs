@@ -34,6 +34,7 @@ namespace UnderPressure
             public Dir exitDir;
             public Vector2Int cell;
             public LiquidGrade grade;
+            public float dist;              // flow distance from the spout to where this stream entered its current channel
             public Transform blob;
             public Springy spring;
             public ParticleSystem trail;
@@ -52,12 +53,24 @@ namespace UnderPressure
 
         /// <summary>Connected, still-empty pipes ahead of the most urgent stream before it would leak (capped).</summary>
         public int PiecesAhead { get; private set; } = 99;
+        /// <summary>Seconds until the most urgent stream spills at the current flow speed (999 = well clear).</summary>
+        public float SecondsToSpill { get; private set; } = 999f;
         /// <summary>The grade of the stream that just filled a pipe (read in PieceFilled).</summary>
         public LiquidGrade LastGrade { get; private set; }
         /// <summary>What leaked out at the end (the funnel catches this).</summary>
         public LiquidGrade SpillGrade { get; private set; }
         /// <summary>How many streams are flowing right now.</summary>
         public int Streams => fronts.Count;
+
+        /// <summary>World position of the first stream's leading edge (the spout creature watches it), or null.</summary>
+        public Vector3? FrontPosition
+        {
+            get
+            {
+                foreach (var f in fronts) if (f.blob != null) return f.blob.position;
+                return null;
+            }
+        }
         /// <summary>The round ended with two streams meeting head-on and bursting a pipe (read in Spilled).</summary>
         public bool LastSpillBurst { get; private set; }
         /// <summary>For a burst: the pipe's direction at the tear (the two torn ends spray both ways along it);
@@ -101,7 +114,7 @@ namespace UnderPressure
         public void Init(GameConfig config, GridBoard b)
         {
             cfg = config; board = b;
-            frontMat = Mats.Lit(Mats.Liquid, 0.9f, 0f, Mats.LiquidGlow);
+            frontMat = Mats.LiquidMat(Mats.LiquidId, Mats.Liquid, Mats.LiquidGlow, 1f, 0.9f);
             warnMat = new Material(Mats.Lit(Mats.Danger, 0.5f, 0f, Mats.Danger));
             warning = Prims.Make(PrimitiveType.Sphere, transform, Vector3.zero, Vector3.one * 0.5f, warnMat, null, "SpillWarning").transform;
             warning.gameObject.SetActive(false);
@@ -111,7 +124,7 @@ namespace UnderPressure
         {
             float S = cfg.tileSize;
             bool tinted = !(grade.Plain && grade.water == Progress.LiquidIsWater);
-            var mat = tinted ? Mats.Lit(grade.Color, 0.9f, 0f, grade.Glow) : frontMat;
+            var mat = tinted ? Mats.LiquidMat(grade.liquidId, grade.Color, grade.Glow, 1f, 0.9f) : frontMat;
             var f = new Front { grade = grade };
             f.blob = Prims.Make(PrimitiveType.Sphere, transform, at, Vector3.one, mat, null, "LiquidFront").transform;
             f.spring = f.blob.gameObject.AddComponent<Springy>();
@@ -148,7 +161,12 @@ namespace UnderPressure
 
         void Update()
         {
-            PiecesAhead = Running ? CountAheadAll(Mathf.Max(1, cfg.panicPiecesAhead) + 2) : 99;
+            // look far enough ahead to cover the panic window and the music's riser window at this flow speed
+            float perPipe = cfg.secondsPerPiece / Mathf.Max(0.01f, SpeedMultiplier);
+            float window = Mathf.Max(cfg.panicSeconds, cfg.musicRiserSeconds);
+            int max = Mathf.Clamp(Mathf.CeilToInt(window / Mathf.Max(0.01f, perPipe)) + 2, 3, 60);
+            PiecesAhead = Running ? CountAheadAll(max) : 99;
+            SecondsToSpill = Running && PiecesAhead < max ? (PiecesAhead + CurrentPipeLeft()) * perPipe : 999f;
             if (!Running) return;
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
@@ -241,6 +259,7 @@ namespace UnderPressure
             }
             var at = p.ChannelPoint(f.channel, 1f, true);
             var src = f.grade; // f becomes the purified stream below, so grade both outlets from what came in
+            float outDist = f.dist + p.ChannelLength(f.channel); // both outlets carry on from the canister
             // another stream already came in by an outlet arm: the filter's fed two liquids and the canister shatters
             foreach (int ch in outs)
             {
@@ -259,11 +278,13 @@ namespace UnderPressure
                 nf.filterIn = false;
                 nf.loopPending = false;
                 nf.t = 0f;
+                nf.dist = outDist;
+                SetPath(nf);
                 if (i == 0 && !grade.Same(src))
                 {
                     // the purified stream changes color: swap the blob's material
                     var r = nf.blob.GetComponent<Renderer>();
-                    if (r != null) r.sharedMaterial = Mats.Lit(grade.Color, 0.9f, 0f, grade.Glow);
+                    if (r != null) r.sharedMaterial = Mats.LiquidMat(grade.liquidId, grade.Color, grade.Glow, 1f, 0.9f);
                 }
                 nf.spring.Squash(0.5f);
             }
@@ -314,22 +335,31 @@ namespace UnderPressure
 
             step++;
             if (!f.loopPending && p.Model.channels.Count > 1 && p.Type != PipeType.Filter) firstPass[p] = step; // a loop opens here
+            if (f.piece != null) f.dist += f.piece.ChannelLength(f.channel);
             f.piece = p;
             f.channel = ch;
             f.cell = n;
             f.filterIn = p.Type == PipeType.Filter;
             f.fromA = f.filterIn || p.WorldA(ch) == DirUtil.Opposite(dir);
             f.exitDir = f.fromA ? p.WorldB(ch) : p.WorldA(ch);
+            SetPath(f);
             p.FlowLocked = true;
             phase = Phase.Piece;
             f.t = 0f;
             f.spring.Squash(0.4f);
         }
 
+        /// <summary>Patterned liquids: tell the channel how far along the flow it is, so the bands travel with it.</summary>
+        static void SetPath(Front f)
+        {
+            if (f.piece != null && Mats.IsPatterned(f.grade.liquidId)) f.piece.SetChannelPath(f.channel, f.dist, f.fromA);
+        }
+
         /// <summary>A stream entering a channel another stream is already filling from the other end.</summary>
         void Converge(Front f, Front other, PipePiece p, int ch, Vector2Int n, Dir dir)
         {
             step++;
+            if (f.piece != null) f.dist += f.piece.ChannelLength(f.channel);
             f.piece = p;
             f.channel = ch;
             f.cell = n;
@@ -376,6 +406,20 @@ namespace UnderPressure
             warning.gameObject.SetActive(false);
             foreach (var o in fronts.ToArray()) RemoveFront(o);
             Spilled?.Invoke(pos, Vector3.Cross(Vector3.up, axis));
+        }
+
+        /// <summary>How much of the pipe it's in the leading stream still has to fill (in pipes; the spout counts at
+        /// its own fill time). The smallest across streams, so the estimate errs on the urgent side.</summary>
+        float CurrentPipeLeft()
+        {
+            float best = 1f;
+            foreach (var f in fronts)
+            {
+                float left = Mathf.Clamp01(1f - f.t);
+                if (f.spout) left *= cfg.spoutFillSeconds / Mathf.Max(0.01f, cfg.secondsPerPiece);
+                best = Mathf.Min(best, left);
+            }
+            return best;
         }
 
         /// <summary>One look-ahead path in CountAheadAll: its head is the channel it last claimed.</summary>

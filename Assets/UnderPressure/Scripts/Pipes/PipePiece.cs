@@ -284,6 +284,7 @@ namespace UnderPressure
         {
             bool tinted = grade.HasValue && !(grade.Value.Plain && grade.Value.water == Progress.LiquidIsWater);
             Color gc = tinted ? grade.Value.Color : default, gg = tinted ? grade.Value.Glow : default;
+            int gid = tinted ? grade.Value.liquidId : 0;
             var ch = Model.channels[index];
             ch.fill = Mathf.Clamp01(fill);
             ch.fromA = fromA;
@@ -293,9 +294,47 @@ namespace UnderPressure
                 int pos = fromA ? j : n - 1 - j;
                 float f = Mathf.Clamp01(ch.fill * n - pos);
                 int lvl = Mathf.RoundToInt(f * (Mats.FillLevels - 1));
-                var mat = tinted ? Mats.FillMatFor(gc, gg, lvl) : Mats.FillMat(lvl);
+                var mat = tinted ? Mats.FillMatFor(gc, gg, lvl, gid) : Mats.FillMat(lvl);
                 foreach (var r in ch.segments[j])
                     if (r.sharedMaterial != mat) r.sharedMaterial = mat;
+            }
+        }
+
+        static MaterialPropertyBlock pathBlock;
+        static readonly int PathAId = Shader.PropertyToID("_PathA"), PathBId = Shader.PropertyToID("_PathB");
+
+        /// <summary>Length of a channel in world units, end to end.</summary>
+        public float ChannelLength(int index)
+        {
+            var pts = Model.channels[index].points;
+            float len = 0f;
+            for (int i = 0; i + 1 < pts.Length; i++)
+                len += Vector3.Distance(Model.root.TransformPoint(pts[i]), Model.root.TransformPoint(pts[i + 1]));
+            return len;
+        }
+
+        /// <summary>
+        /// Tell a patterned liquid's shader how far along the flow each segment of this channel is, so its bands
+        /// travel down the pipe with the stream. 'startDist' is the flow distance (from the spout) where the stream
+        /// enters; 'fromA' is which end it enters by.
+        /// </summary>
+        public void SetChannelPath(int index, float startDist, bool fromA)
+        {
+            var ch = Model.channels[index];
+            var pts = ch.points;
+            int n = Mathf.Min(ch.segments.Length, pts.Length - 1);
+            if (pathBlock == null) pathBlock = new MaterialPropertyBlock();
+            float total = ChannelLength(index), acc = 0f;
+            for (int j = 0; j < n; j++)
+            {
+                Vector3 a = Model.root.TransformPoint(pts[j]), b = Model.root.TransformPoint(pts[j + 1]);
+                float len = Vector3.Distance(a, b);
+                float da = fromA ? startDist + acc : startDist + total - acc;
+                float db = fromA ? da + len : da - len;
+                acc += len;
+                pathBlock.SetVector(PathAId, new Vector4(a.x, a.y, a.z, da));
+                pathBlock.SetVector(PathBId, new Vector4(b.x, b.y, b.z, db));
+                foreach (var r in ch.segments[j]) r.SetPropertyBlock(pathBlock);
             }
         }
 
@@ -303,7 +342,7 @@ namespace UnderPressure
         {
             bool tinted = !(grade.Plain && grade.water == Progress.LiquidIsWater);
             int lvl = Mathf.RoundToInt(Mathf.Clamp01(f) * (Mats.FillLevels - 1));
-            return tinted ? Mats.FillMatFor(grade.Color, grade.Glow, lvl) : Mats.FillMat(lvl);
+            return tinted ? Mats.FillMatFor(grade.Color, grade.Glow, lvl, grade.liquidId) : Mats.FillMat(lvl);
         }
 
         /// <summary>Two streams filling one channel from opposite ends: 'fromA' of it from the a end, 'fromB' from the b end.</summary>

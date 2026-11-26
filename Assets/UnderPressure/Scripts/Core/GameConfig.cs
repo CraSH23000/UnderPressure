@@ -21,7 +21,20 @@ namespace UnderPressure
         public string purifiesTo = "";
         [Tooltip("What a filter's other outlet turns this into: another entry's name. End it in '+' for an endless chain: \"TOXIC SLIME+\" gives TOXIC SLIME+, ++, +++, +4... Blank = stays as it is.")]
         public string concentratesTo = "";
+
+        [Header("Pattern (optional)")]
+        [Tooltip("Solid = one flat color. Anything else swirls 'color' with 'color2' (pipe fill, the stream's front, puddles, the spout slime).")]
+        public LiquidPattern pattern = LiquidPattern.Solid;
+        public Color color2 = Color.black;
+        [ColorUsage(false, true)] public Color glow2 = Color.black;
+        [Tooltip("Size of the bands / swirls (1 = about a tile).")]
+        public float patternScale = 1f;
+        [Tooltip("How fast the pattern flows / churns.")]
+        public float patternSpeed = 1f;
     }
+
+    /// <summary>How a liquid's color moves. Solid is plain; the rest use the UnderPressure/LiquidPattern shader.</summary>
+    public enum LiquidPattern { Solid, Bands, Marble }
 
     /// <summary>
     /// Every tunable number in one place. Create one via Assets > Create > Under Pressure > Game Config
@@ -50,8 +63,8 @@ namespace UnderPressure
         [Tooltip("Flow speeds you can dial in by holding Use on the dispenser and pressing rotate. Index 'flowSpeedDefault' is where it starts.")]
         public float[] flowSpeedSteps = { 0.5f, 0.75f, 1f, 1.5f, 2f, 3f };
         public int flowSpeedDefault = 2;
-        [Tooltip("The leak warning (and panic music) kicks in when fewer than this many connected pipes are left ahead of the liquid.")]
-        public int panicPiecesAhead = 4;
+        [Tooltip("The leak warning (klaxon, LEAK IN n! on the spout, the alarm music if the riser is off) kicks in when the liquid is less than this many seconds from spilling, at the current flow speed. (The tension riser starts earlier, see musicRiserSeconds.)")]
+        public float panicSeconds = 8f;
 
         [Header("Money & bonuses")]
         public int moneyPerPiece = 10;
@@ -111,11 +124,25 @@ namespace UnderPressure
         public float loosePieceSlowdown = 0.16f;
         public float minLooseSpeedMultiplier = 0.55f;
 
+        [Header("Ghost (mouse player)")]
+        [Tooltip("Clicking the mouse joins a ghost: a wisp that floats after the cursor. Left click = Use, scroll = rotate, right click = drop / let go. It floats over pipes, the belt and the pit, and doesn't use items or lockers.")]
+        public bool enableGhost = true;
+        [Tooltip("The ghost's top speed, as a multiple of walkSpeed. It chases the cursor at up to this speed (it doesn't teleport to it).")]
+        public float ghostSpeedMultiplier = 1.6f;
+        [Tooltip("How snappily the ghost settles on the cursor (higher = snappier, lower = floatier). It always eases in and stops on the spot, so it never overshoots.")]
+        public float ghostFollow = 6f;
+        [Tooltip("How high the ghost floats above the floor.")]
+        public float ghostHoverHeight = 0.45f;
+
         [Header("Interaction")]
         public float pickupRadius = 1.15f;
         [Tooltip("The place/unscrew target is the tile under a point this far (in tiles) in front of you. " +
                  "0.35 = place on your own tile until you're past its centre, then the next one. You hop off a piece placed under you.")]
         public float placeProbeTiles = 0.35f;
+        [Range(0.1f, 1f)] [Tooltip("How solid the hologram of the carried piece on the target tile is (1 = opaque).")]
+        public float previewOpacity = 0.7f;
+        [Range(0f, 2f)] [Tooltip("How much the hologram glows in its color. Pale colors (white = placed but not connected) glow less, so they keep their shading on the white floor.")]
+        public float previewGlow = 0.6f;
         [Tooltip("Hold time to unbolt a piece that is NOT attached to the spout network.")]
         public float unboltSeconds = 0.35f;
         [Tooltip("Hold time to unscrew a piece latched to the spout network (the 'bad piece' penalty).")]
@@ -275,6 +302,23 @@ namespace UnderPressure
         public float musicSpeed = 0.84f;
         [Range(0f, 2f)] [Tooltip("Panic loop loudness relative to the rest of the music.")]
         public float musicPanicVolume = 1.4f;
+        [Tooltip("On: instead of cutting to the alarm loop, the music keeps going while a tension riser climbs as the liquid gets closer to spilling (topping out at the spill) and drops back as you lay pipe. Off: the old swap to the alarm loop at panic.")]
+        public bool musicPanicRiser = true;
+        [Tooltip("How many seconds before the spill the riser starts creeping in (a hint long before the full panic).")]
+        public float musicRiserSeconds = 20f;
+        [Range(0f, 2f)] [Tooltip("Riser loudness relative to the music.")]
+        public float musicRiserVolume = 0.6f;
+        [Tooltip("The root of the tense minor chord the riser climbs to (MIDI number: 57 = A3). It never resolves: at the spill it cuts into a splash.")]
+        public int musicRiserRootNote = 57;
+        [Range(0f, 1f)] [Tooltip("Music level at full tension (0.5 = half volume), so the riser sits on top.")]
+        public float musicPanicDuck = 0.5f;
+        [Range(0f, 1f)] [Tooltip("How muffled the music gets at full tension (a low-pass, like your ears under pressure). 0 = none.")]
+        public float musicPanicMuffle = 0.6f;
+        [Tooltip("A heartbeat under the riser: one beat per pipe the liquid fills, two when pipes take longer than musicHeartbeatSplitSeconds. Louder as the tension rises.")]
+        public bool musicHeartbeat = true;
+        [Range(0f, 2f)] public float musicHeartbeatVolume = 0.8f;
+        [Tooltip("Pipes slower than this (seconds per pipe at the current flow speed) get two heartbeats each.")]
+        public float musicHeartbeatSplitSeconds = 1.5f;
         [Tooltip("Play recorded stems from Resources/Songs/<musicSong> instead of the code-built synth music. Files are named layer_variant (drums_008, bass_005, ...); files without an underscore (full mixes) are ignored. All stems of a song must be the same length. musicPitchSemitones and musicSpeed don't apply; the panic loop is still the synth one.")]
         public bool musicRealAudio = false;
         [Tooltip("Folder under Resources/Songs played when musicRealAudio is on.")]
@@ -283,8 +327,14 @@ namespace UnderPressure
         public string musicStemLeadLayers = "vocals";
         [Tooltip("On: the lead stems (vocals) act as the melody, coming in with the flow. Off: they're silent during chamber rounds and play only off the clock and at the base.")]
         public bool musicStemLeadInChambers = false;
+        [Tooltip("Off: the lead stems (vocals) never play at all (they aren't even loaded).")]
+        public bool musicStemLeadOn = true;
         [Tooltip("Stem layers picked once per song and never swapped, comma-separated. Every other layer re-rolls its variant each time the loop comes round.")]
         public string musicStemFixedLayers = "drums";
+        [Tooltip("Stem layers that build up into the flow (comma-separated, e.g. \"synth\"): silent at the base and off the clock, they creep in over the countdown's last seconds and play in full while the liquid flows. Blank = every non-lead layer plays all the time.")]
+        public string musicStemFlowLayers = "synth";
+        [Tooltip("How many seconds before the countdown ends the flow layers start creeping in (they reach full volume at zero).")]
+        public float musicStemFlowInSeconds = 8f;
 
         [Header("Feel & sound")]
         public float screenShakeScale = 1f;

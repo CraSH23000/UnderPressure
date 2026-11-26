@@ -123,8 +123,12 @@ namespace UnderPressure
             Sfx.Play(Sfx.I != null ? Sfx.I.tick : null, 0.6f, 0.7f, 0f);
         }
 
+        /// <summary>The frame the menu last closed on (so the click that closed it doesn't also join a ghost).</summary>
+        public static int ClosedFrame = -10;
+
         void Close()
         {
+            ClosedFrame = Time.frameCount;
             page = Page.Closed;
             overlay.gameObject.SetActive(false);
             if (JuiceHost.Instance != null) JuiceHost.Instance.Paused = false;

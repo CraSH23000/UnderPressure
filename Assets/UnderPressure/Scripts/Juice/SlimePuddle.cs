@@ -31,7 +31,7 @@ namespace UnderPressure
             dir.Normalize();
             Vector3 side = Vector3.Cross(Vector3.up, dir);
             float gs = Mats.FillGlowScale;
-            var mat = Mats.Lit(Mats.Liquid, 0.97f, 0.05f, Mats.LiquidGlow * 0.35f * gs);
+            var mat = Mats.LiquidMat(Mats.LiquidId, Mats.Liquid, Mats.LiquidGlow, 0.35f * gs, 0.97f, 0.05f);
             var rim = Mats.Lit(Color.Lerp(Mats.Liquid, Color.black, 0.25f), 0.9f, 0.05f, Mats.LiquidGlow * (0.2f + 0.3f * (1f - gs)));
 
             // main body, elongated along the spill direction; a darker rim underneath gives it a meniscus edge

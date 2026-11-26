@@ -39,6 +39,7 @@ namespace UnderPressure
         {
             if (Kind == ClosetKind.BioReactor) return new[] { Part.Species, Part.Size };
             if (Kind == ClosetKind.SprayBooth) return new[] { Part.Color };
+            if (p != null && p.IsGhost) return new[] { Part.Player, Part.Color }; // a ghost has no body to dress: just its colors
             var rows = Kind == ClosetKind.Locker
                 ? new List<Part> { Part.Player, Part.Species, Part.Size, Part.Color, Part.Hat, Part.Torso }
                 : new List<Part> { Part.Hat, Part.Torso };

@@ -213,6 +213,9 @@ namespace UnderPressure
 
         /// <summary>Is this critter standing in the leak's spray (a cone 'sprayReach' long from pos along dir)?</summary>
         public static bool InSpray(PlayerController p, Vector3 pos, Vector3 dir)
+            => p != null && !p.IsGhost && InSprayCone(p, pos, dir); // a ghost can't get wet (or catch the leak)
+
+        static bool InSprayCone(PlayerController p, Vector3 pos, Vector3 dir)
         {
             if (p == null || !p.CanBeSprayed || Cfg == null) return false;
             dir.y = 0f;

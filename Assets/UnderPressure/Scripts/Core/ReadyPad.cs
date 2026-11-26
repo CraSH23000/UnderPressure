@@ -34,7 +34,7 @@ namespace UnderPressure
         LineRenderer[] arcs;
         LineRenderer bolt, boltBranch;
         Light flashLight;
-        float charge, flash, rise, arcTimer, strikeT = -1f;
+        float charge, flash, arcTimer, strikeT = -1f;
         bool spent; // after the strike the coils go dead
         readonly System.Random rng = new System.Random();
 
@@ -106,7 +106,6 @@ namespace UnderPressure
             }
             // start in the shaft
             transform.position = pos - Vector3.up * ShaftDepth;
-            rise = 1f; // (the old pop-up scale is not used any more)
             transform.localScale = Vector3.one;
             elevT = 0f;
         }

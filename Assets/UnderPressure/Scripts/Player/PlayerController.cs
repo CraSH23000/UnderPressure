@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace UnderPressure
 {
@@ -20,6 +21,8 @@ namespace UnderPressure
         public CritterLook Look { get; private set; }
         public bool InCloset => closet != null;
         public ControlScheme Scheme => input.Scheme;
+        /// <summary>The mouse player: a ghost that floats after the cursor. No items, lockers, jumping or getting wet.</summary>
+        public bool IsGhost => input != null && input.Scheme == ControlScheme.Mouse;
 
         GameConfig cfg;
         GridBoard board;
@@ -81,10 +84,19 @@ namespace UnderPressure
             cc.minMoveDistance = 0f;
             var rigGo = Prims.Empty("Rig", transform, Vector3.zero);
             rig = rigGo.AddComponent<PlayerRig>();
-            rig.Build(Look);
-            pack = rigGo.AddComponent<PlayerBackpack>(); // turns with the critter
-            pack.Init(rig);
-            Items.EnsureBound(index); // anything owned but not on a button yet gets one
+            if (IsGhost)
+            {
+                rig.BuildGhost(Look.BodyColor); // no backpack, no item buttons: ghosts travel light
+                cc.enabled = false;
+                BuildLure(color);
+            }
+            else
+            {
+                rig.Build(Look);
+                pack = rigGo.AddComponent<PlayerBackpack>(); // turns with the critter
+                pack.Init(rig);
+                Items.EnsureBound(index); // anything owned but not on a button yet gets one
+            }
 
             // floor ring in the player's color so you can find yourself in a crowd
             ringMat = new Material(Mats.Lit(Color.Lerp(color, Color.white, 0.2f), 0.2f, 0f, color * 0.6f)); // its own copy: the color can change
@@ -166,6 +178,7 @@ namespace UnderPressure
         public void SetPlayerColor(Color c)
         {
             Color = c;
+            if (lure != null) { Destroy(lure.gameObject); BuildLure(c); } // the ghost's lure is in the player color
             if (ringMat != null) { Mats.SetBase(ringMat, Color.Lerp(c, Color.white, 0.2f)); Mats.SetEmission(ringMat, c * 0.6f); }
             if (invPanel != null) { invPanel.SetColor(c); }
             Game.Hud?.SetRoster(Game.Players);
@@ -199,6 +212,7 @@ namespace UnderPressure
 
         void OnDestroy()
         {
+            if (lure != null) Destroy(lure.gameObject);
             if (closet != null) closet.Release(this, false);
             if (invPanel != null) Destroy(invPanel.gameObject);
             input?.Dispose();
@@ -222,7 +236,8 @@ namespace UnderPressure
             preview.Hide();
             if (Held != null) { Held.gameObject.SetActive(false); Held = null; }
             pack?.Clear();
-            CharredRemains.Spawn(Pos, Color);
+            if (IsGhost) Fx.Puff(Pos + Vector3.up * (height + 0.6f), Color.Lerp(Color, Color.white, 0.5f), 1f); // already dead: it just pops
+            else CharredRemains.Spawn(Pos, Color);
             foreach (Transform child in transform) child.gameObject.SetActive(false);
             cc.enabled = false;
         }
@@ -239,35 +254,42 @@ namespace UnderPressure
         void Update()
         {
             float dt = Time.deltaTime;
+            if (lure != null) lure.gameObject.SetActive(shown && !vaporized && !arriving && closet == null && !(Game.Manager != null && Game.Manager.Paused));
             if (dt <= 0f || vaporized) { if (invOpen) CloseInventory(); return; } // hit-stop / gone
             if (invOpen && (arriving || falling || closet != null)) CloseInventory();
             UpdateBuff(dt);
             if (arriving) { ArrivalUpdate(dt); return; }
             if (falling) { FallUpdate(dt); return; }
             if (closet != null) { ClosetUpdate(dt); return; }
-            CheckPit();
 
             bool over = Game.Manager != null && Game.Manager.IsOver;
-            Vector2 mv = input.MoveValue; // between chambers you can roam freely
-            Vector3 wish = new Vector3(mv.x, 0f, mv.y);
-            if (valveActive && mv.sqrMagnitude > 0.35f) ExitValve(); // walking away lets go of the valve
-            if (holdPiece != null || valveActive) wish = Vector3.zero; // committed while unscrewing / on the valve
+            bool menuFrame = false;
+            if (IsGhost && Time.frameCount - PauseMenu.ClosedFrame <= 1) menuFrame = true; // the click that closed the menu isn't a grab
+            if (IsGhost) GhostMove(dt);
+            else
+            {
+                CheckPit();
+                Vector2 mv = input.MoveValue; // between chambers you can roam freely
+                Vector3 wish = new Vector3(mv.x, 0f, mv.y);
+                if (valveActive && mv.sqrMagnitude > 0.35f) ExitValve(); // walking away lets go of the valve
+                if (holdPiece != null || valveActive) wish = Vector3.zero; // committed while unscrewing / on the valve
 
-            // inventory: toggled with its own button; while it's open the critter stands still and the controls drive the list
-            bool menuFrame = invOpen;
-            if (!invOpen && input.Inventory.WasPressedThisFrame() && mode == Mode.Walk && holdPiece == null && !valveActive) OpenInventory();
-            if (invOpen) { InventoryUpdate(); wish = Vector3.zero; menuFrame = true; }
-            else for (int i = 0; i < Items.Slots; i++)
-                    if (input.ItemButtons[i].WasPressedThisFrame()) UseItemButton(i);
+                // inventory: toggled with its own button; while it's open the critter stands still and the controls drive the list
+                menuFrame = invOpen;
+                if (!invOpen && input.Inventory.WasPressedThisFrame() && mode == Mode.Walk && holdPiece == null && !valveActive) OpenInventory();
+                if (invOpen) { InventoryUpdate(); wish = Vector3.zero; menuFrame = true; }
+                else for (int i = 0; i < Items.Slots; i++)
+                        if (input.ItemButtons[i].WasPressedThisFrame()) UseItemButton(i);
 
-            sprinting = false; // hold-to-sprint is disconnected; the same button dashes
-            dashCooldownT -= dt;
-            if (dashCooldownT <= 0f) dashChargesLeft = MaxDashes;
-            if (!menuFrame && input.Sprint.WasPressedThisFrame() && mode == Mode.Walk && holdPiece == null && !valveActive && dashChargesLeft > 0 && dashT <= 0f)
-                StartDash(wish);
-            if (mode == Mode.Walk || mode == Mode.Crawl) Locomotion(wish, dt);
-            else ScriptedMotion(dt);
-            UpdateJump(dt);
+                sprinting = false; // hold-to-sprint is disconnected; the same button dashes
+                dashCooldownT -= dt;
+                if (dashCooldownT <= 0f) dashChargesLeft = MaxDashes;
+                if (!menuFrame && input.Sprint.WasPressedThisFrame() && mode == Mode.Walk && holdPiece == null && !valveActive && dashChargesLeft > 0 && dashT <= 0f)
+                    StartDash(wish);
+                if (mode == Mode.Walk || mode == Mode.Crawl) Locomotion(wish, dt);
+                else ScriptedMotion(dt);
+                UpdateJump(dt);
+            }
 
             // between chambers it's "off the clock": everything still works (nothing scores), except the speed controls
             if (over && valveActive && !onLever) ExitValve();
@@ -366,7 +388,201 @@ namespace UnderPressure
             if (mode == Mode.Walk && InsidePipe()) NudgeOutOf(board.WorldToCell(Pos)); // gave up halfway (e.g. a wall): pop out
         }
 
-        Vector3 HoldPoint() => Pos + facing * rig.HoldReach + Vector3.up * (rig.HoldHeight + height + jumpH);
+        Vector3 HoldPoint() => Pos + facing * (IsGhost ? 0.35f : rig.HoldReach) + Vector3.up * (rig.HoldHeight + height + jumpH);
+
+        // ================================================================== the ghost (mouse player)
+
+        float scrollAcc, scrollCooldown;
+
+        /// <summary>Where the mouse cursor points on the floor.</summary>
+        static bool CursorOnFloor(out Vector3 point)
+        {
+            point = default;
+            var cam = Game.Cam != null ? Game.Cam.Cam : Camera.main;
+            var m = Mouse.current;
+            if (cam == null || m == null) return false;
+            var ray = cam.ScreenPointToRay(m.position.ReadValue());
+            if (Mathf.Abs(ray.direction.y) < 1e-4f) return false;
+            float t = -ray.origin.y / ray.direction.y;
+            if (t < 0f) return false;
+            point = ray.origin + ray.direction * t;
+            return true;
+        }
+
+        /// <summary>
+        /// The ghost floats after the cursor: it chases it at up to walking speed (it doesn't teleport, so carrying a
+        /// piece across the room still takes a trip), drifting over pipes, the belt and the pit, bobbing as it goes.
+        /// </summary>
+        void GhostMove(float dt)
+        {
+            if (cc.enabled) cc.enabled = false; // nothing blocks a ghost, and it blocks nobody
+            mode = Mode.Walk;
+            if (CursorOnFloor(out Vector3 cursor))
+            {
+                cursor.x = Mathf.Clamp(cursor.x, walkArea.xMin + 0.3f, walkArea.xMax - 0.3f);
+                cursor.z = Mathf.Clamp(cursor.z, walkArea.yMin + 0.3f, walkArea.yMax - 0.3f);
+                cursor.y = 0f;
+                ghostCursor = cursor;
+            }
+            UpdateLure(dt);
+            if (ghostCmd)
+            {
+                ghostCmdT -= dt;
+                // holding the button on a "go here" drags it: the ghost chases the cursor until you let go,
+                // then finishes the trip to wherever you let go
+                if (ghostCmdAct == Act.None && input.Use.IsPressed()) { ghostCmdPoint = ghostCursor; ghostCmdT = 4f; }
+                if (ghostCmdT <= 0f || !GhostCommandValid()) CancelGhostCommand();
+            }
+            // click to move: the ghost stays put until it's sent somewhere (following the cursor fought the follow-cam:
+            // the camera framing the ghost moved the cursor's spot on the floor, so the ghost kept drifting).
+            // A critically damped move: it eases in and stops on the spot, no overshooting.
+            Vector3 aim = GhostAim;
+            bool going = ghostCmd && holdPiece == null && !valveActive; // committed while unscrewing / on the valve
+            Vector3 target = going ? new Vector3(aim.x, 0f, aim.z) : new Vector3(Pos.x, 0f, Pos.z);
+            float max = cfg.walkSpeed * Mathf.Max(0.1f, cfg.ghostSpeedMultiplier);
+            Vector3 p = Vector3.SmoothDamp(new Vector3(Pos.x, 0f, Pos.z), target, ref vel, 1f / Mathf.Max(0.5f, cfg.ghostFollow), max, dt);
+            vel.y = 0f;
+            transform.position = new Vector3(p.x, 0f, p.z);
+
+            if (vel.sqrMagnitude > 0.3f)
+            {
+                float cur = Mathf.Atan2(facing.x, facing.z) * Mathf.Rad2Deg;
+                float wantYaw = Mathf.Atan2(vel.x, vel.z) * Mathf.Rad2Deg;
+                float yaw = Mathf.MoveTowardsAngle(cur, wantYaw, cfg.turnSpeedDegrees * 0.5f * dt) * Mathf.Deg2Rad;
+                facing = new Vector3(Mathf.Sin(yaw), 0f, Mathf.Cos(yaw));
+            }
+            float hover = cfg.ghostHoverHeight + Mathf.Sin(Time.time * 2.3f + Index) * 0.06f;
+            height = Mathf.Lerp(height, hover, 1f - Mathf.Exp(-6f * dt));
+            jumpH = 0f;
+        }
+
+        /// <summary>The scroll wheel, as rotate steps (up = clockwise). Trackpads send lots of tiny scrolls, so steps
+        /// are spaced out a little.</summary>
+        int GhostScrollStep()
+        {
+            var m = Mouse.current;
+            if (m == null) return 0;
+            scrollAcc += m.scroll.ReadValue().y;
+            scrollCooldown -= Time.deltaTime;
+            if (scrollCooldown > 0f || Mathf.Abs(scrollAcc) < 0.01f) return 0;
+            int d = scrollAcc > 0f ? 1 : -1;
+            scrollAcc = 0f;
+            scrollCooldown = 0.08f;
+            return d;
+        }
+
+        // ---- clicks are orders: click a piece / tile / the valve and the ghost goes there and does it ----
+        Vector3 ghostCursor;
+        bool ghostCmd, ghostClickPending;
+        Act ghostCmdAct;
+        PipePiece ghostCmdPiece;
+        Vector3 ghostCmdPoint;
+        float ghostCmdT;
+        Transform lure, lureOrb, lureRing;
+        float lureT;
+
+        float GhostReach => S * 0.3f;
+
+        static bool PieceAct(Act a) => a == Act.TakeFromBelt || a == Act.PickLoose || a == Act.Steal;
+
+        /// <summary>Where the ghost is heading and working: the target of its order, else the cursor (what a click
+        /// would do, for the preview).</summary>
+        Vector3 GhostAim
+        {
+            get
+            {
+                if (!ghostCmd) return ghostCursor;
+                if (PieceAct(ghostCmdAct) && ghostCmdPiece != null) { var q = ghostCmdPiece.transform.position; q.y = 0f; return q; }
+                return ghostCmdPoint;
+            }
+        }
+
+        bool GhostCommandValid()
+        {
+            if (!PieceAct(ghostCmdAct)) return true;
+            if (ghostCmdPiece == null) return false;
+            var st = ghostCmdPiece.State;
+            if (ghostCmdAct == Act.TakeFromBelt) return st == PieceState.OnBelt;
+            if (ghostCmdAct == Act.PickLoose) return st == PieceState.Loose;
+            return actVictim != null && actVictim.Held == ghostCmdPiece; // steal: they still have it
+        }
+
+        void CancelGhostCommand()
+        {
+            ghostCmd = false;
+            ghostCmdPiece = null;
+        }
+
+        /// <summary>
+        /// Turns a click into an order. In reach, it happens now. Out of reach, the ghost remembers what was clicked,
+        /// goes there, and does it on arrival (checking it's still the same thing). A new click replaces the order.
+        /// Returns true on the frame the Use should happen.
+        /// </summary>
+        bool GhostUse(bool pressed)
+        {
+            if (ghostClickPending) { pressed = true; ghostClickPending = false; }
+            bool inReach = FlatDist(Pos, GhostAim) <= GhostReach;
+            if (pressed)
+            {
+                if (ghostCmd)
+                {
+                    // a new click while on an errand: drop the errand, and treat the click fresh next frame (aimed at the cursor)
+                    CancelGhostCommand();
+                    ghostClickPending = true;
+                    return false;
+                }
+                if (act == Act.Blocked) { Nope(); return false; }
+                if (inReach && act != Act.None) return true; // right here: do it
+                // otherwise it's an errand: out of reach, or a "go here" on open floor (which a held button drags)
+                ghostCmd = true;
+                ghostCmdAct = act;
+                ghostCmdPiece = actPiece;
+                ghostCmdT = 4f;
+                bool tile = (act == Act.Place || act == Act.Swap || act == Act.Unscrew || act == Act.Valve) && board.InBounds(actCell);
+                ghostCmdPoint = tile ? board.CellCenter(actCell) : ghostCursor;
+                ghostCmdPoint.y = 0f;
+                Sfx.Play(Sfx.I != null ? Sfx.I.tick : null, 0.35f, 1.4f, 0f);
+                return false;
+            }
+            if (ghostCmd && inReach)
+            {
+                bool moveOnly = ghostCmdAct == Act.None;
+                if (moveOnly && input.Use.IsPressed()) return false; // still being dragged: keep chasing
+                bool same = act == ghostCmdAct && (!PieceAct(act) || actPiece == ghostCmdPiece);
+                CancelGhostCommand();
+                if (moveOnly) return false; // just a "go here": arrived
+                if (!same) { Nope(); return false; } // something changed while we floated over
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>The lure: a little will-o'-the-wisp at the cursor (what the ghost is following), with a ring on
+        /// the floor under it, so you can always see where you're pointing.</summary>
+        void BuildLure(Color color)
+        {
+            lure = new GameObject("GhostLure_P" + (Index + 1)).transform;
+            lure.SetParent(transform.parent, false);
+            Color pale = Color.Lerp(color, Color.white, 0.5f);
+            lureOrb = Prims.Empty("Orb", lure, Vector3.up * 0.6f).transform;
+            Prims.Make(PrimitiveType.Sphere, lureOrb, Vector3.zero, Vector3.one * 0.16f, Mats.Lit(pale, 0.8f, 0f, color * 3.5f), null, "Core");
+            Prims.Make(PrimitiveType.Sphere, lureOrb, Vector3.zero, Vector3.one * 0.34f, Mats.Transparent(new Color(pale.r, pale.g, pale.b, 0.22f)), null, "Halo");
+            lureRing = Prims.Make(PrimitiveType.Cylinder, lure, Vector3.up * 0.03f, new Vector3(0.5f, 0.004f, 0.5f),
+                Mats.Transparent(new Color(color.r, color.g, color.b, 0.4f)), null, "Ring").transform;
+        }
+
+        void UpdateLure(float dt)
+        {
+            if (lure == null) return;
+            lureT += dt;
+            lure.position = ghostCursor;
+            // the ring marks where the ghost is going while it's on its way, else sits under the cursor
+            lureRing.position = (ghostCmd ? GhostAim : ghostCursor) + Vector3.up * 0.03f;
+            lureOrb.localPosition = Vector3.up * (0.6f + Mathf.Sin(lureT * 4f) * 0.08f);
+            lureOrb.localScale = Vector3.one * (1f + Mathf.Sin(lureT * 9f) * 0.1f);
+            float ring = ghostCmd ? 0.7f : 0.5f; // a bit wider on the destination
+            lureRing.localScale = Vector3.Lerp(lureRing.localScale, new Vector3(ring, 0.004f, ring) * (1f + Mathf.Sin(lureT * 3f) * 0.06f), 1f - Mathf.Exp(-10f * dt));
+        }
 
         // ================================================================== movement
 
@@ -533,6 +749,13 @@ namespace UnderPressure
         {
             if (!input.Jump.WasPressedThisFrame() || holdPiece != null || Airborne) return;
             if (valveActive) { ExitValve(); return; }
+            if (IsGhost)
+            {
+                // right click: call off an errand, else drop what you're carrying
+                if (ghostCmd) CancelGhostCommand();
+                else if (Held != null) DropHeld();
+                return;
+            }
             if (mode == Mode.Walk)
             {
                 if (TryClimbOrVault()) return;
@@ -676,8 +899,9 @@ namespace UnderPressure
             // just put a piece down: the next one comes out of the backpack
             if (refillT > 0f) { refillT -= Time.deltaTime; if (refillT <= 0f && Held == null && holdPiece == null) TakeFromPack(); }
 
-            Vector3 hand = Pos + facing * 0.8f;
-            Vector2Int cell = FrontCell();
+            // the ghost works on whatever it's floating over (the tile under the cursor, once it gets there)
+            Vector3 hand = IsGhost ? GhostAim : Pos + facing * 0.8f;
+            Vector2Int cell = IsGhost ? board.WorldToCell(GhostAim) : FrontCell();
             bool inBounds = board.InBounds(cell);
             act = Act.None;
             actPiece = null;
@@ -685,8 +909,8 @@ namespace UnderPressure
 
             if (holdPiece != null) { act = holdAct; actPiece = holdPiece; actCell = holdPiece.Cell; }
             else if (valveActive) { act = onLever ? Act.Lever : Act.Valve; actCell = board.Spout.Cell; }
-            else if (NearestCloset() != null) act = Act.Closet;
-            else if (NearestVending() != null) act = Act.Vending;
+            else if (NearestCloset() != null) act = Act.Closet;   // ghosts get a cut-down locker (just the colors)
+            else if (!IsGhost && NearestVending() != null) act = Act.Vending;
             else if (Game.Lever != null && FlatDist(Game.Lever.transform.position, hand) < 1.0f) act = Act.Lever;
             else if (Held == null)
             {
@@ -698,7 +922,7 @@ namespace UnderPressure
                 if (lp != null && FlatDist(lp.transform.position, hand) < best) { best = FlatDist(lp.transform.position, hand); act = Act.PickLoose; actPiece = lp; }
                 foreach (var other in Game.Players)
                 {
-                    if (other == null || other == this || other.Held == null) continue;
+                    if (other == null || other == this || other.Held == null || other.IsGhost) continue; // your hand goes straight through
                     if (Time.time < other.Held.StealProtectedUntil) continue;
                     float d = FlatDist(other.Held.transform.position, hand);
                     if (d < cfg.pickupRadius && d < best) { best = d; act = Act.Steal; actPiece = other.Held; actVictim = other; }
@@ -726,7 +950,7 @@ namespace UnderPressure
                     }
                 }
                 else if (belt.IsOverBelt(hand)) act = Act.PutOnBelt;
-                else act = Act.Drop;
+                else act = IsGhost ? Act.None : Act.Drop; // ghost: clicking open floor means "go there" (right click drops)
                 // backpack with room: grabbing another piece stows the one in your hands
                 if ((act == Act.PutOnBelt || act == Act.Drop) && pack != null && pack.HasRoom)
                 {
@@ -819,7 +1043,8 @@ namespace UnderPressure
             }
             if (holdPiece != null)
             {
-                if (!input.Use.IsPressed() || holdPiece.State != PieceState.Placed || Locked(holdPiece))
+                bool letGo = IsGhost ? input.Jump.WasPressedThisFrame() : !input.Use.IsPressed(); // ghost: one click, right click cancels
+                if (letGo || holdPiece.State != PieceState.Placed || Locked(holdPiece))
                 {
                     CancelHold();
                     return;
@@ -848,7 +1073,9 @@ namespace UnderPressure
                 return;
             }
 
-            if (!input.Use.WasPressedThisFrame()) return;
+            bool use = input.Use.WasPressedThisFrame();
+            if (IsGhost) use = GhostUse(use);
+            if (!use) return;
 
             switch (act)
             {
@@ -924,6 +1151,7 @@ namespace UnderPressure
             int d = 0;
             if (input.RotateCW.WasPressedThisFrame()) d += 1;
             if (input.RotateCCW.WasPressedThisFrame()) d -= 1;
+            if (IsGhost) d += GhostScrollStep();
             if (d == 0) return;
             if (valveActive && onLever)
             {
@@ -961,6 +1189,9 @@ namespace UnderPressure
                 return;
             }
             if (Held == null) return;
+            // ghost: turning the piece while it's on its way to place it calls the placing off (it was clicked
+            // with the old rotation): turn it, then click again
+            if (IsGhost && ghostCmd && (ghostCmdAct == Act.Place || ghostCmdAct == Act.Swap)) CancelGhostCommand();
             Held.Rotate(d);
             rig.Squash(0.08f);
             Sfx.Play(Sfx.I != null ? Sfx.I.rotate : null, 0.6f, d > 0 ? 1.1f : 0.95f);
@@ -1155,7 +1386,7 @@ namespace UnderPressure
                         if (this == null) return;
                         arriving = false;
                         arrivalPad = null;
-                        cc.enabled = true;
+                        cc.enabled = !IsGhost; // a ghost never gets a collider back
                         gameObject.layer = Layers.Player;
                     });
             };
@@ -1529,11 +1760,12 @@ namespace UnderPressure
         {
             actCloset = null;
             if (mode != Mode.Walk || Airborne || holdPiece != null || valveActive) return null;
-            float best = 0.85f;
+            float best = IsGhost ? 1.1f : 0.85f;
+            Vector3 from = IsGhost ? GhostAim : Pos; // the ghost: where it's pointing (a click sends it over)
             foreach (var c in Closet.All)
             {
                 if (c == null || !c.UsableBy(this)) continue; // other players' lockers
-                float d = FlatDist(c.Entrance, Pos);
+                float d = FlatDist(c.Entrance, from);
                 if (d < best) { best = d; actCloset = c; }
             }
             return actCloset;
@@ -1597,7 +1829,8 @@ namespace UnderPressure
         {
             Look = l.Clone();
             Look.Save(Index);
-            rig.Build(Look);
+            if (IsGhost) rig.BuildGhost(Look.BodyColor);
+            else rig.Build(Look);
             bool was = cc.enabled;
             cc.enabled = false; // resizing an enabled controller can push it around
             FitToBody();
@@ -1622,11 +1855,11 @@ namespace UnderPressure
                     {
                         closet.Release(this);
                         closet = null;
-                        cc.enabled = true;
+                        cc.enabled = !IsGhost;
                         gameObject.layer = Layers.Player;
                         rig.Squash(0.25f);
                         Fx.Dust(Pos, 0.3f, 6);
-                        rig.Tick(dt, facing, 0f, 0f, false, false, false, -1f);
+                        rig.Tick(dt, facing, 0f, IsGhost ? height : 0f, false, false, false, -1f);
                         return;
                     }
                 }
@@ -1636,7 +1869,7 @@ namespace UnderPressure
                 facing = Vector3.Slerp(facing, closet.Facing, 1f - Mathf.Exp(-10f * dt));
                 var rows = closet.RowsFor(this);
                 closetRow = Mathf.Clamp(closetRow, 0, rows.Length - 1);
-                Vector2 mv = input.MoveValue;
+                Vector2 mv = IsGhost ? Vector2.zero : input.MoveValue;
                 int nx = mv.x > 0.55f ? 1 : mv.x < -0.55f ? -1 : 0;
                 int ny = mv.y > 0.55f ? 1 : mv.y < -0.55f ? -1 : 0;
                 bool fresh = nx != lastNavX || ny != lastNavY;
@@ -1655,9 +1888,16 @@ namespace UnderPressure
                 int d = 0;
                 if (input.RotateCW.WasPressedThisFrame()) d += 1;
                 if (input.RotateCCW.WasPressedThisFrame()) d -= 1;
+                if (IsGhost) d += GhostScrollStep();
                 if (d != 0) { closet.Change(this, rows[closetRow], d); Game.Hud?.PunchCloset(Index, d); }
 
-                if (input.Use.WasPressedThisFrame() || input.Jump.WasPressedThisFrame())
+                // the ghost: click steps to the next row, right click is done
+                if (IsGhost && input.Use.WasPressedThisFrame() && rows.Length > 1)
+                {
+                    closetRow = (closetRow + 1) % rows.Length;
+                    Sfx.Play(Sfx.I != null ? Sfx.I.tick : null, 0.5f, 1.2f);
+                }
+                else if (IsGhost ? input.Jump.WasPressedThisFrame() : input.Use.WasPressedThisFrame() || input.Jump.WasPressedThisFrame())
                 {
                     closet.Leaving(this);
                     closetPhase = 2;
@@ -1679,12 +1919,14 @@ namespace UnderPressure
                         valueNew[i] = rowNew[i] && closet.ValueNew(this, rows[i]);
                     }
                     string move = input.Scheme == ControlScheme.Gamepad ? "STICK" : input.Scheme == ControlScheme.KeyboardWASD ? "WASD" : "ARROWS";
+                    string hint = IsGhost ? "[Scroll] change  ·  [Click] next row  ·  [R-Click] done"
+                        : $"{move} / [{RotateCCWLabel}][{RotateCWLabel}] change  ·  [{UseLabel}] done";
                     Game.Hud.ShowCloset(Index, Color, closet.Kind == ClosetKind.Locker ? closet.Title : $"P{Index + 1}  {closet.Title}", labels, values, swatches, closetRow,
-                        $"{move} / [{RotateCCWLabel}][{RotateCWLabel}] change  ·  [{UseLabel}] done", rowNew, valueNew);
+                        hint, rowNew, valueNew);
                 }
             }
             rig.LookAt(transform.position + facing * 3f + Vector3.up * 0.5f);
-            rig.Tick(dt, facing, closetPhase == 1 ? 0f : 0.6f, 0f, false, false, false, -1f);
+            rig.Tick(dt, facing, closetPhase == 1 ? 0f : 0.6f, IsGhost ? height : 0f, false, false, false, -1f);
         }
 
         void ExitValve()
@@ -1696,10 +1938,10 @@ namespace UnderPressure
         }
 
         // button names for on-screen guides, matching this player's controls
-        public string UseLabel => input.Scheme == ControlScheme.Gamepad ? "X" : input.Scheme == ControlScheme.KeyboardWASD ? "E" : "Enter";
-        public string JumpLabel => input.Scheme == ControlScheme.Gamepad ? "A" : input.Scheme == ControlScheme.KeyboardWASD ? "Space" : "R-Ctrl";
-        public string RotateCCWLabel => input.Scheme == ControlScheme.Gamepad ? "Y" : input.Scheme == ControlScheme.KeyboardWASD ? "F" : ";";
-        public string RotateCWLabel => input.Scheme == ControlScheme.Gamepad ? "B" : input.Scheme == ControlScheme.KeyboardWASD ? "G" : "'";
+        public string UseLabel => IsGhost ? "Click" : input.Scheme == ControlScheme.Gamepad ? "X" : input.Scheme == ControlScheme.KeyboardWASD ? "E" : "Enter";
+        public string JumpLabel => IsGhost ? "R-Click" : input.Scheme == ControlScheme.Gamepad ? "A" : input.Scheme == ControlScheme.KeyboardWASD ? "Space" : "R-Ctrl";
+        public string RotateCCWLabel => IsGhost ? "Scroll ▼" : input.Scheme == ControlScheme.Gamepad ? "Y" : input.Scheme == ControlScheme.KeyboardWASD ? "F" : ";";
+        public string RotateCWLabel => IsGhost ? "Scroll ▲" : input.Scheme == ControlScheme.Gamepad ? "B" : input.Scheme == ControlScheme.KeyboardWASD ? "G" : "'";
 
         void CancelHold()
         {
@@ -1751,7 +1993,7 @@ namespace UnderPressure
         /// </summary>
         void HopOffPlaced(Vector2Int cell)
         {
-            if (mode != Mode.Walk) return;
+            if (mode != Mode.Walk || IsGhost) return; // a ghost just floats where it is
             if (!PipeOverlapsMe(cell)) return; // standing on the bare plate beside the tube: stay put
             var r = board.CellRect(cell);
             float pad = cc.radius + 0.47f * S - 0.5f * S + 0.04f;
@@ -1780,7 +2022,7 @@ namespace UnderPressure
 
         public void NudgeOutOf(Vector2Int cell)
         {
-            if (mode != Mode.Walk) return;
+            if (mode != Mode.Walk || IsGhost) return;
             if (!PipeOverlapsMe(cell)) return;
             var r = board.CellRect(cell);
             float pad = cc.radius + 0.47f * S - 0.5f * S + 0.02f; // collider is 0.94 of the tile

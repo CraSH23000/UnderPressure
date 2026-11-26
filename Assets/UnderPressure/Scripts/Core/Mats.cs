@@ -45,6 +45,9 @@ namespace UnderPressure
         public static void Init()
         {
             cache.Clear();
+            patterned.Clear();
+            tintedFills.Clear();
+            patternShaderLooked = false;
             fillMats = null;
             circle = null;
             ring = null;
@@ -130,9 +133,10 @@ namespace UnderPressure
         static readonly Dictionary<string, Material[]> tintedFills = new Dictionary<string, Material[]>();
 
         /// <summary>Fill materials for a stream of a given color (filtered or concentrated liquid).</summary>
-        public static Material FillMatFor(Color liquid, Color glow, int level)
+        public static Material FillMatFor(Color liquid, Color glow, int level, int liquidId = 0)
         {
-            string key = $"{liquid}{glow}";
+            bool pat = IsPatterned(liquidId);
+            string key = pat ? $"{liquid}{glow}#{liquidId}" : $"{liquid}{glow}";
             if (!tintedFills.TryGetValue(key, out var mats) || mats == null || mats[0] == null)
             {
                 mats = new Material[FillLevels];
@@ -140,7 +144,9 @@ namespace UnderPressure
                 {
                     float t = i / (float)(FillLevels - 1);
                     var c = Color.Lerp(PipeBody, liquid, Mathf.SmoothStep(0, 1, t));
-                    mats[i] = Lit(c, 0.85f, 0f, Color.Lerp(Color.black, glow * 0.4f * FillGlowScale, t));
+                    mats[i] = pat && i > 0
+                        ? PatternMat(liquidId, liquid, glow, 0.4f * FillGlowScale, 0.85f, 0f, Mathf.SmoothStep(0, 1, t), t)
+                        : Lit(c, 0.85f, 0f, Color.Lerp(Color.black, glow * 0.4f * FillGlowScale, t));
                 }
                 tintedFills[key] = mats;
             }
@@ -156,10 +162,115 @@ namespace UnderPressure
                 {
                     float t = i / (float)(FillLevels - 1);
                     var c = Color.Lerp(PipeBody, Liquid, Mathf.SmoothStep(0, 1, t));
-                    fillMats[i] = Lit(c, 0.85f, 0f, Color.Lerp(Color.black, LiquidGlow * 0.4f * FillGlowScale, t));
+                    fillMats[i] = i > 0 && IsPatterned(LiquidId)
+                        ? PatternMat(LiquidId, Liquid, LiquidGlow, 0.4f * FillGlowScale, 0.85f, 0f, Mathf.SmoothStep(0, 1, t), t)
+                        : Lit(c, 0.85f, 0f, Color.Lerp(Color.black, LiquidGlow * 0.4f * FillGlowScale, t));
                 }
             }
             return fillMats[Mathf.Clamp(level, 0, FillLevels - 1)];
+        }
+
+        // ---------------- Patterned liquids (LiquidType.pattern != Solid) ----------------
+
+        class Patterned { public Material mat; public int id; public float glowScale; }
+        static readonly List<Patterned> patterned = new List<Patterned>();
+        static Shader patternShader;
+        static bool patternShaderLooked;
+        static readonly int OriginId = Shader.PropertyToID("_UPLiquidOrigin");
+
+        /// <summary>Debug (F8 in the editor / dev builds): show every patterned liquid as this pattern instead of
+        /// its own, to compare looks live. Null = each liquid's configured pattern.</summary>
+        public static LiquidPattern? PatternOverride;
+
+        static Shader PatternShader
+        {
+            get
+            {
+                if (!patternShaderLooked) { patternShaderLooked = true; patternShader = Shader.Find("UnderPressure/LiquidPattern"); }
+                return patternShader != null && patternShader.isSupported ? patternShader : null;
+            }
+        }
+
+        static LiquidType LiquidDef(int id)
+        {
+            var list = Game.Config != null ? Game.Config.liquids : null;
+            return list != null && id > 0 && id <= list.Length ? list[id - 1] : null;
+        }
+
+        /// <summary>Does this GameConfig.liquids entry (1-based) draw with a moving pattern?</summary>
+        public static bool IsPatterned(int liquidId)
+        {
+            var d = LiquidDef(liquidId);
+            return d != null && d.pattern != LiquidPattern.Solid && PatternShader != null;
+        }
+
+        /// <summary>
+        /// A liquid's surface: plain Lit (cached) for solid liquids, or the LiquidPattern shader for patterned ones.
+        /// 'glowScale' multiplies both glows (the entry's glow2 gets the same treatment as 'glow').
+        /// 'unique' gives a fresh material the caller may recolor (the spout slime).
+        /// </summary>
+        public static Material LiquidMat(int liquidId, Color c, Color glow, float glowScale, float smoothness, float metallic = 0f, bool unique = false)
+        {
+            if (IsPatterned(liquidId))
+            {
+                var pm = PatternMat(liquidId, c, glow, glowScale, smoothness, metallic, 1f, 1f, unique);
+                if (pm != null) return pm;
+            }
+            var m = Lit(c, smoothness, metallic, glow * glowScale);
+            return unique ? new Material(m) : m;
+        }
+
+        static Material PatternMat(int liquidId, Color c, Color glow, float glowScale, float smoothness, float metallic, float fill, float fillGlow, bool unique = false)
+        {
+            string key = $"pat{liquidId}{c}{glow}{glowScale}{smoothness}{metallic}{fill}{fillGlow}";
+            if (!unique && cache.TryGetValue(key, out var m) && m != null) return m;
+            var sh = PatternShader;
+            if (sh == null) return null;
+            m = new Material(sh) { name = "UP_LiquidPattern" };
+            SetBase(m, c);
+            m.SetColor("_EmissionColor", glow * glowScale);
+            m.SetColor("_PipeColor", PipeBody);
+            m.SetFloat("_Fill", fill);
+            m.SetFloat("_FillGlow", fillGlow);
+            m.SetFloat("_Smoothness", smoothness);
+            m.SetFloat("_Metallic", metallic);
+            var p = new Patterned { mat = m, id = liquidId, glowScale = glowScale };
+            ApplyPattern(p);
+            patterned.Add(p);
+            if (!unique) cache[key] = m;
+            return m;
+        }
+
+        static void ApplyPattern(Patterned p)
+        {
+            var d = LiquidDef(p.id);
+            if (d == null) return;
+            var pat = PatternOverride ?? d.pattern;
+            p.mat.SetFloat("_Pattern", pat == LiquidPattern.Marble ? 1f : 0f);
+            p.mat.SetColor("_Color2", d.color2);
+            p.mat.SetColor("_Emission2", d.glow2 * p.glowScale);
+            p.mat.SetFloat("_Scale", d.patternScale);
+            p.mat.SetFloat("_Speed", d.patternSpeed);
+        }
+
+        /// <summary>Once a frame (from the spout): where the bands flow out from, plus live re-reading of the
+        /// pattern settings so they can be tuned in the GameConfig inspector during play.</summary>
+        public static void TickPatterns(Vector3 origin)
+        {
+            Shader.SetGlobalVector(OriginId, origin);
+            var kb = Debug.isDebugBuild ? UnityEngine.InputSystem.Keyboard.current : null; // editor + dev builds only
+            if (kb != null && kb.f8Key.wasPressedThisFrame)
+            {
+                PatternOverride = PatternOverride == null ? LiquidPattern.Bands : PatternOverride == LiquidPattern.Bands ? LiquidPattern.Marble : (LiquidPattern?)null;
+                Debug.Log(PatternOverride.HasValue
+                    ? $"[UnderPressure] Liquid pattern: forced to {PatternOverride} (F8)"
+                    : "[UnderPressure] Liquid pattern: back to each liquid's own setting in GameConfig (F8)");
+            }
+            for (int i = patterned.Count - 1; i >= 0; i--)
+            {
+                if (patterned[i].mat == null) { patterned.RemoveAt(i); continue; }
+                ApplyPattern(patterned[i]);
+            }
         }
 
         /// <summary>Unlit (HDR) color, e.g. for lightning and electric arcs. Not cached: callers may animate it.</summary>

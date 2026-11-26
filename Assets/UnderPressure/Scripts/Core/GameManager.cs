@@ -18,6 +18,11 @@ namespace UnderPressure
         public int Distance { get; private set; }
         public int Loops { get; private set; }
         public float CountdownRemaining => countdown;
+
+        /// <summary>How close the liquid is to spilling, for the music's riser: 0 until it's within musicRiserSeconds,
+        /// 1 at the spill. Only while it flows.</summary>
+        public float SpillTension => Current == State.Flowing && flow != null && flow.Running
+            ? Mathf.Clamp01(1f - flow.SecondsToSpill / Mathf.Max(0.5f, cfg.musicRiserSeconds)) : 0f;
         /// <summary>The liquid is about to leak: panic music, warning HUD.</summary>
         public bool Panic { get; private set; }
 
@@ -73,7 +78,7 @@ namespace UnderPressure
 
         void OnDestroy()
         {
-            if (hum != null) Destroy(hum);
+            if (hum != null) Destroy(hum.gameObject);
             restart?.Dispose();
             pause?.Dispose();
             pauseRestart?.Dispose();
@@ -162,8 +167,8 @@ namespace UnderPressure
                     var holo = board.Spout.Hologram;
                     if (Panic)
                     {
-                        int left = flow.PiecesAhead;
-                        holo.Set(left == 0 ? "LEAK!" : $"LEAK IN {left}!", "lay pipe ahead!", true);
+                        int left = Mathf.CeilToInt(flow.SecondsToSpill); // seconds, at the current flow speed
+                        holo.Set(left <= 0 ? "LEAK!" : $"LEAK IN {left}!", "lay pipe ahead!", true);
                     }
                     else
                         holo.Set("", SpoutHologram.LiquidName, false, SpoutHologram.LiquidTextColor, FlowInfo());
@@ -180,7 +185,7 @@ namespace UnderPressure
 
         void UpdatePanic()
         {
-            bool panic = flow.PiecesAhead < Mathf.Max(1, cfg.panicPiecesAhead);
+            bool panic = flow.SecondsToSpill < Mathf.Max(0.5f, cfg.panicSeconds);
             if (panic && !Panic)
             {
                 Banner.Show("LEAK WARNING!", Mats.Danger, 100, 1.0f, -60f);
@@ -262,6 +267,7 @@ namespace UnderPressure
         void OnPieceFilled(PipePiece p)
         {
             Distance++;
+            Music.Instance?.PipeFilled(); // the heartbeat
             Progress.OnPieceFilled(p);
             // the Count Ant, and filtered streams (purer water / stronger concentrate) are worth more
             int value = Mathf.RoundToInt(PieceValue() * Items.MoneyMultiplier * flow.LastGrade.ValueMultiplier);

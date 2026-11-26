@@ -65,9 +65,13 @@ namespace UnderPressure
             {
                 g.position = cellCenter + Vector3.up * (0.04f + 0.04f * Mathf.Sin(Time.time * 6f));
                 g.rotation = Quaternion.Slerp(g.rotation, Quaternion.Euler(0, 90f * rotation, 0), 1f - Mathf.Exp(-25f * Time.deltaTime));
-                var c = color; c.a = 0.38f;
+                var cfg = Game.Config;
+                var c = color; c.a = cfg != null ? cfg.previewOpacity : 0.7f;
                 Mats.SetBase(ghostMat, c);
-                ghostMat.SetColor("_EmissionColor", color * 0.35f);
+                // glow only as much as the color is saturated: a white glow flattens the tube into a blob on the white
+                // floor, while lit shading shows its bends and openings (and so how it's rotated)
+                Color.RGBToHSV(color, out _, out float sat, out _);
+                ghostMat.SetColor("_EmissionColor", color * (cfg != null ? cfg.previewGlow : 0.6f) * Mathf.Lerp(0.15f, 1f, sat));
             }
         }
 

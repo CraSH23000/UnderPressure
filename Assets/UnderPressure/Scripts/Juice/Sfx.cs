@@ -26,14 +26,8 @@ namespace UnderPressure
             I = this;
             sources = new AudioSource[16];
             for (int i = 0; i < sources.Length; i++)
-            {
-                sources[i] = gameObject.AddComponent<AudioSource>();
-                sources[i].playOnAwake = false;
-                sources[i].spatialBlend = 0f;
-            }
-            tickSource = gameObject.AddComponent<AudioSource>();
-            tickSource.playOnAwake = false;
-            tickSource.spatialBlend = 0f;
+                sources[i] = NewSource(transform, "Voice " + i, null);
+            tickSource = NewSource(transform, "Tick", null);
             Generate();
         }
 
@@ -311,12 +305,28 @@ namespace UnderPressure
         public static AudioSource Loop(AudioClip clip)
         {
             if (I == null || clip == null) return null;
-            var s = I.gameObject.AddComponent<AudioSource>();
-            s.clip = clip;
+            var s = NewSource(I.transform, clip.name, clip);
             s.loop = true;
-            s.spatialBlend = 0f;
             s.volume = 0f;
             s.Play();
+            return s;
+        }
+
+        /// <summary>
+        /// A 2D AudioSource on its own child object (destroy its gameObject when done). Built while the child is
+        /// inactive: an AudioSource added to an active object wakes up with the default playOnAwake and no clip,
+        /// which Unity warns about ("Only custom filters can be played").
+        /// </summary>
+        public static AudioSource NewSource(Transform parent, string name, AudioClip clip)
+        {
+            var go = new GameObject(string.IsNullOrEmpty(name) ? "Source" : name);
+            go.SetActive(false);
+            go.transform.SetParent(parent, false);
+            var s = go.AddComponent<AudioSource>();
+            s.clip = clip;
+            s.playOnAwake = false;
+            s.spatialBlend = 0f;
+            go.SetActive(true);
             return s;
         }
 

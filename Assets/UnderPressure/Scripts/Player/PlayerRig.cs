@@ -32,6 +32,11 @@ namespace UnderPressure
         Quaternion armRestRotL, armRestRotR, legRestL, legRestR, headRest = Quaternion.identity;
         Vector3[] eyeRest = new Vector3[0];
 
+        // ---- the ghost (mouse player): a wisp, its tail puffs trail and sway ----
+        bool ghostMode;
+        Transform[] wisps;
+        Vector3[] wispRest;
+
         // ---- sipping: a prop comes out into the right hand, goes up to the mouth, glug glug, then is put away ----
         Transform mouth, sipGrip;
         float sipT = -1f, sipGlugT, sipScale = 1f, sipHeadUp, sipLean;
@@ -78,6 +83,7 @@ namespace UnderPressure
             antenna = tail = null;
             armL = armR = legL = legR = null;
             mouth = sipGrip = null; sipT = -1f;
+            ghostMode = false; wisps = null;
 
             var model = ModelFor(look);
             if (model != null) { BuildModel(model, look); return; }
@@ -124,6 +130,71 @@ namespace UnderPressure
                 lift.localScale = Vector3.one * sc;
                 HoldHeight = 0.62f * sc; HoldReach = 0.58f * Mathf.Max(1f, sc); Footprint = sc; Height = 1.2f * sc;
             }
+        }
+
+        /// <summary>
+        /// The ghost: a see-through wisp in the player's color with a glowing heart, deadpan dot eyes, a little "o"
+        /// mouth, floating mitten hands and a tail of shrinking puffs that trails and sways as it drifts.
+        /// </summary>
+        public void BuildGhost(Color color)
+        {
+            foreach (Transform c in transform) Destroy(c.gameObject);
+            hasLast = false;
+            modelMode = false;
+            blob = false;
+            ghostMode = true;
+            k = 1f; pivotY = 0.25f;
+            HoldHeight = 0.5f; HoldReach = 0.6f; Footprint = 0.85f; Height = 1.05f;
+            antenna = tail = null;
+            armL = armR = legL = legR = null;
+            mouth = sipGrip = null; sipT = -1f;
+
+            Color pale = Color.Lerp(color, Color.white, 0.45f);
+            var mist = Mats.Transparent(new Color(pale.r, pale.g, pale.b, 0.5f));
+            var wispMat = Mats.Transparent(new Color(pale.r, pale.g, pale.b, 0.32f));
+            var heart = Mats.Lit(Color.Lerp(color, Color.white, 0.6f), 0.8f, 0f, color * 1.8f);
+            var ink = Mats.Lit(new Color(0.04f, 0.04f, 0.07f), 0.95f);
+
+            lift = Prims.Empty("Lift", transform, Vector3.zero).transform;
+            pitch = Prims.Empty("Pitch", lift, new Vector3(0, 0.25f, 0)).transform;
+            body = Prims.Empty("Body", pitch, new Vector3(0, -0.25f, 0)).transform;
+            spring = body.gameObject.AddComponent<Springy>();
+            spring.stiffness = 220f; spring.damping = 8f; // a bit wobblier than a critter
+            spring.SetBase(1f, true);
+
+            Prims.Make(PrimitiveType.Sphere, body, new Vector3(0, 0.64f, 0), new Vector3(0.8f, 0.8f, 0.76f), mist, null, "Head");
+            Prims.Make(PrimitiveType.Sphere, body, new Vector3(0, 0.6f, -0.02f), new Vector3(0.36f, 0.38f, 0.34f), heart, null, "Heart");
+
+            // the tail: puffs getting smaller, trailing down and behind
+            wisps = new Transform[4];
+            wispRest = new Vector3[4];
+            Vector3[] at = { new Vector3(0, 0.36f, -0.03f), new Vector3(0, 0.2f, -0.1f), new Vector3(0, 0.09f, -0.19f), new Vector3(0, 0.02f, -0.3f) };
+            float[] size = { 0.64f, 0.46f, 0.3f, 0.18f };
+            for (int i = 0; i < wisps.Length; i++)
+            {
+                wisps[i] = Prims.Empty("Wisp" + i, body, at[i]).transform;
+                wispRest[i] = at[i];
+                Prims.Make(PrimitiveType.Sphere, wisps[i], Vector3.zero, new Vector3(size[i], size[i] * 0.8f, size[i]), i == 0 ? mist : wispMat, null, "Puff");
+            }
+
+            face = Prims.Empty("Face", body, new Vector3(0, 0.68f, 0)).transform;
+            eyeballs = new Transform[2]; pupils = new Transform[2];
+            pupilZ = 0.02f; lookScale = 0.6f;
+            for (int i = 0; i < 2; i++)
+            {
+                float s = i == 0 ? -1f : 1f;
+                var ball = Prims.Empty("Eye", face, new Vector3(s * 0.14f, 0.04f, 0.35f)).transform;
+                var pupil = Prims.Empty("Pupil", ball, new Vector3(0, 0, pupilZ)).transform;
+                Prims.Make(PrimitiveType.Sphere, pupil, Vector3.zero, new Vector3(0.09f, 0.15f, 0.05f), ink, null, "Dot");
+                eyeballs[i] = ball;
+                pupils[i] = pupil;
+            }
+            Prims.Make(PrimitiveType.Sphere, face, new Vector3(0, -0.13f, 0.36f), new Vector3(0.07f, 0.09f, 0.03f), ink, null, "Mouth");
+
+            handL = Prims.Make(PrimitiveType.Sphere, pitch, Vector3.zero, Vector3.one * 0.16f, mist, null, "HandL").transform;
+            handR = Prims.Make(PrimitiveType.Sphere, pitch, Vector3.zero, Vector3.one * 0.16f, mist, null, "HandR").transform;
+            footL = Prims.Empty("FootL", lift, Vector3.zero).transform; // no feet, but the animation still moves these
+            footR = Prims.Empty("FootR", lift, Vector3.zero).transform;
         }
 
         // ================================================================== FBX characters
@@ -597,10 +668,11 @@ namespace UnderPressure
             curPitch = Mathf.Lerp(curPitch, targetPitch, 1f - Mathf.Exp(-14f * dt));
             // waddle: critters rock side to side
             float targetTilt = crawling ? sinP * 7f * moving : sinP * 7f * moving;
+            if (ghostMode) targetTilt = Mathf.Sin(Time.time * 1.7f) * 5f; // a ghost drifts, it doesn't waddle
             curTilt = Mathf.Lerp(curTilt, targetTilt, 1f - Mathf.Exp(-14f * dt));
             pitch.localRotation = Quaternion.Euler(curPitch, 0f, curTilt);
 
-            float bob = crawling || blob ? 0f : Mathf.Abs(sinP) * 0.06f * moving * k;
+            float bob = crawling || blob || ghostMode ? 0f : Mathf.Abs(sinP) * 0.06f * moving * k;
             if (blob && moving > 0.1f && Mathf.Sign(sinP) != Mathf.Sign(lastSinP)) spring.Squash(0.14f * moving); // goo schlorps along
             lastSinP = sinP;
             float breathe = Mathf.Sin(Time.time * 2.4f) * 0.012f * k;
@@ -654,6 +726,20 @@ namespace UnderPressure
             antennaAngle += antennaVel * dt;
             if (antenna != null)
                 antenna.localRotation = Quaternion.Euler(antennaAngle.x + (crawling ? -30f : 0f), 0f, antennaAngle.z + Mathf.Sin(Time.time * 3f) * 3f);
+
+            // ghost tail: each puff lags behind the drift a little more than the one before, and sways
+            if (wisps != null)
+            {
+                Vector3 velLocal = transform.InverseTransformDirection(vel);
+                for (int i = 0; i < wisps.Length; i++)
+                {
+                    float f = i + 1;
+                    Vector3 lag = Vector3.ClampMagnitude(new Vector3(-velLocal.x, 0f, -velLocal.z) * 0.025f * f, 0.12f * f);
+                    float sway = Mathf.Sin(Time.time * 3f - i * 0.9f) * 0.035f * f;
+                    Vector3 want = wispRest[i] + new Vector3(sway + lag.x, Mathf.Sin(Time.time * 2.2f - i) * 0.015f, lag.z);
+                    wisps[i].localPosition = Vector3.Lerp(wisps[i].localPosition, want, 1f - Mathf.Exp(-10f * dt));
+                }
+            }
 
             // tail wag
             if (tail != null)

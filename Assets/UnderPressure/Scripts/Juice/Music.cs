@@ -28,7 +28,7 @@ namespace UnderPressure
         public void Cut()
         {
             cut = true;
-            baseVol = leadVol = stemLeadVol = panicVol = 0f;
+            baseVol = leadVol = stemLeadVol = stemFlowVol = panicVol = 0f;
             foreach (var m in music) m.volume = 0f;
             foreach (var s in stemSources) s.volume = 0f;
             panicSrc.volume = 0f;
@@ -38,8 +38,18 @@ namespace UnderPressure
         void OnDestroy() { if (Instance == this) Instance = null; }
 
         AudioSource baseSrc, leadSrc, harmSrc, staticSrc, panicSrc;
+        // the tension riser (instead of the alarm swap): live synth + heartbeat on child objects, so the
+        // music's muffle (a low-pass on each music source's own object) doesn't dull them
+        PanicRiser riser;
+        AudioSource heartSrc;
+        AudioClip heartClip;
+        // a filter only touches the AudioSource on its own object, so every music source carries one
+        readonly System.Collections.Generic.List<AudioLowPassFilter> muffles = new System.Collections.Generic.List<AudioLowPassFilter>();
+        bool muffleOn; float muffleCutoff = 22000f;
+        float tension, heartPending = -1f;
+        bool splashed;
         AudioSource[] music;
-        float baseVol, leadVol, stemLeadVol, panicVol, pitch = 1f, overTime = -1f, tempo = 1f;
+        float baseVol, leadVol, stemLeadVol, stemFlowVol, panicVol, pitch = 1f, overTime = -1f, tempo = 1f;
         float tempoTarget = 1f, tempoChangeTime;
         bool paused;
 
@@ -64,16 +74,71 @@ namespace UnderPressure
             foreach (var m in music) m.PlayScheduled(start);
             staticSrc.Play();
             panicSrc.Play();
+
+            riser = PanicRiser.Create(transform);
+            var heartGo = new GameObject("Heartbeat"); // its own object: the riser's filter callback would add into it too
+            heartGo.transform.SetParent(transform, false);
+            heartSrc = heartGo.AddComponent<AudioSource>();
+            heartSrc.playOnAwake = false;
+            heartSrc.spatialBlend = 0f;
+            heartClip = BuildHeartbeat();
+        }
+
+        /// <summary>A lub-dub: two low thumps that drop in pitch, the second softer.</summary>
+        static AudioClip BuildHeartbeat()
+        {
+            int n = (int)(SR * 0.5f);
+            var d = new float[n];
+            void Thump(float at, float amp)
+            {
+                int start = (int)(at * SR);
+                double ph = 0;
+                for (int i = 0; start + i < n && i < SR * 0.25f; i++)
+                {
+                    float t = i / (float)SR;
+                    float f = Mathf.Lerp(95f, 42f, Mathf.Clamp01(t / 0.12f));
+                    ph += f / SR;
+                    float env = Mathf.Min(1f, t / 0.004f) * Mathf.Exp(-t / 0.07f);
+                    d[start + i] += (float)System.Math.Sin(ph * 2.0 * System.Math.PI) * env * amp;
+                }
+            }
+            Thump(0f, 0.9f);
+            Thump(0.17f, 0.6f);
+            var clip = AudioClip.Create("heartbeat", n, 1, SR, false);
+            clip.SetData(d, 0);
+            return clip;
+        }
+
+        /// <summary>The liquid filled a pipe: a heartbeat (two per pipe when pipes are slow), once the tension's up.</summary>
+        public void PipeFilled()
+        {
+            var cfg = Game.Config;
+            if (cfg == null || !cfg.musicPanicRiser || !cfg.musicHeartbeat || tension < 0.08f) return;
+            Beat();
+            float perPipe = cfg.secondsPerPiece / Mathf.Max(0.01f, Game.Flow != null ? Game.Flow.SpeedMultiplier : 1f);
+            heartPending = perPipe > cfg.musicHeartbeatSplitSeconds ? perPipe * 0.5f : -1f;
+        }
+
+        void Beat()
+        {
+            var cfg = Game.Config;
+            if (heartSrc == null || cfg == null) return;
+            float master = cfg.musicVolume * GameSettings.MusicVolume;
+            heartSrc.pitch = 0.9f + 0.3f * tension;
+            heartSrc.PlayOneShot(heartClip, Mathf.Min(1f, master * cfg.musicHeartbeatVolume * (0.3f + 0.7f * tension)));
         }
 
         AudioSource MakeSource(AudioClip clip)
         {
-            var s = gameObject.AddComponent<AudioSource>();
-            s.clip = clip;
+            // each on its own child, built inactive: an AudioSource added to an active object wakes up with the
+            // default playOnAwake and no clip, which Unity warns about ("Only custom filters can be played")
+            var s = Sfx.NewSource(transform, clip != null ? clip.name : "Source", clip);
             s.loop = true;
-            s.playOnAwake = false;
-            s.spatialBlend = 0f;
             s.volume = 0f;
+            var lp = s.gameObject.AddComponent<AudioLowPassFilter>();
+            lp.cutoffFrequency = muffleCutoff;
+            lp.enabled = muffleOn;
+            muffles.Add(lp);
             return s;
         }
 
@@ -134,11 +199,17 @@ namespace UnderPressure
                 foreach (var s in stemSources) { if (paused) s.Pause(); else s.UnPause(); }
                 if (paused) { staticSrc.Pause(); panicSrc.Pause(); } else { staticSrc.UnPause(); panicSrc.UnPause(); }
             }
-            if (paused || cut) return;
+            if (paused || cut)
+            {
+                riser?.Set(0f, 0f, 1f, 57); // the riser fades out (its source keeps running)
+                return;
+            }
 
             float targetBase = 0.6f, targetLead = 0f, targetPitch = 1f, targetPanic = 0f;
             bool tapeStop = false;
-            bool panic = gm != null && gm.Panic && gm.Current == GameManager.State.Flowing;
+            bool riserMode = cfg == null || cfg.musicPanicRiser;
+            // with the riser, panic doesn't swap tracks: the music keeps going under it (ducked and muffled below)
+            bool panic = !riserMode && gm != null && gm.Panic && gm.Current == GameManager.State.Flowing;
             if (gm != null)
             {
                 bool anyone = Game.Players.Count > 0;
@@ -189,9 +260,21 @@ namespace UnderPressure
             bool offClock = gm != null && gm.IsOver && !tapeStop;
             float targetStemLead = leadInChambers ? targetLead : offClock ? targetBase : 0f;
 
+            // flow layers (synth): the build-up into the flow. In over the countdown's last seconds, full while it
+            // flows, out for panic (like the rest of the groove), and gone off the clock and at the base.
+            float targetStemFlow = 0f;
+            if (gm != null && Game.Players.Count > 0)
+            {
+                if (gm.Current == GameManager.State.Countdown)
+                    targetStemFlow = Mathf.Clamp01(1f - gm.CountdownRemaining / Mathf.Max(0.1f, cfg != null ? cfg.musicStemFlowInSeconds : 8f));
+                else if (gm.Current == GameManager.State.Flowing) targetStemFlow = panic ? 0f : 1f;
+                else if (tapeStop) targetStemFlow = Mathf.Min(stemFlowVol, 1f - overTime);
+            }
+
             // panic swaps in fast; everything else drifts
             bool swapping = panic || panicVol > 0.01f;
             stemLeadVol = Mathf.MoveTowards(stemLeadVol, targetStemLead, dt * (swapping || tapeStop ? 3f : 0.6f));
+            stemFlowVol = Mathf.MoveTowards(stemFlowVol, targetStemFlow, dt * (swapping || tapeStop ? 3f : 0.6f));
             if (panic && panicVol < 0.01f) panicSrc.timeSamples = 0; // start the alarm loop from the top
             baseVol = Mathf.MoveTowards(baseVol, targetBase, dt * (swapping ? 3f : 0.8f));
             leadVol = Mathf.MoveTowards(leadVol, targetLead, dt * (swapping ? 3f : 0.6f));
@@ -215,11 +298,41 @@ namespace UnderPressure
             else staticBurst = 0f;
 
             float p = pitch * vhsPitch * tempo;
-            float synthGain = StemsOn ? 0f : master * vhsGain;
+
+            // ---- tension riser: climbs as the spill gets closer, drops back as pipe is laid ----
+            float targetTension = riserMode && gm != null ? gm.SpillTension : 0f;
+            if (tapeStop) targetTension = tension; // on the spill it doesn't sink back: it cuts into the splash
+            tension = Mathf.MoveTowards(tension, targetTension, dt * (targetTension > tension ? 1.5f : 2.5f));
+            float duck = Mathf.Lerp(1f, cfg != null ? cfg.musicPanicDuck : 0.5f, tension);
+            float muff = (cfg != null ? cfg.musicPanicMuffle : 0.6f) * tension * tension;
+            muffleOn = muff > 0.01f;
+            muffleCutoff = 22000f * Mathf.Pow(600f / 22000f, muff);
+            for (int i = muffles.Count - 1; i >= 0; i--)
+            {
+                var lp = muffles[i];
+                if (lp == null) { muffles.RemoveAt(i); continue; } // its stem was unloaded
+                lp.enabled = muffleOn;
+                lp.cutoffFrequency = muffleCutoff;
+            }
+            float riserVol = master * vhsGain * (cfg != null ? cfg.musicRiserVolume : 0.6f);
+            if (gm != null && gm.Current == GameManager.State.Flowing) splashed = false;
+            if (tapeStop && !splashed)
+            {
+                splashed = true;
+                if (riserMode && tension > 0.05f) riser.Splash(tension, riserVol); // the spill: the riser cuts into a splash
+            }
+            riser.Set(tension, tapeStop || (gm != null && gm.IsOver) ? 0f : riserVol, p, cfg != null ? cfg.musicRiserRootNote : 57);
+            if (heartPending >= 0f)
+            {
+                heartPending -= Time.deltaTime;
+                if (heartPending < 0f && tension >= 0.08f) Beat();
+            }
+
+            float synthGain = StemsOn ? 0f : master * vhsGain * duck;
             baseSrc.volume = baseVol * synthGain;
             leadSrc.volume = leadVol * leadMix * synthGain;
             harmSrc.volume = leadVol * harmMix * synthGain;
-            if (StemsOn) UpdateStems(dt, master * vhsGain, leadMix, p);
+            if (StemsOn) UpdateStems(dt, master * vhsGain * duck, leadMix, p);
             // pitch and speed of the normal music are baked into its clips (see ReadRenderSettings)
             foreach (var m in music) m.pitch = p;
             CheckRerender();
@@ -294,7 +407,7 @@ namespace UnderPressure
         class StemLayer
         {
             public string name;
-            public bool lead, fixedPick;
+            public bool lead, flow, fixedPick;
             public AudioSource[] variants;
             public float[] weight;
             public int current;
@@ -310,7 +423,7 @@ namespace UnderPressure
         void SyncStems(GameConfig cfg)
         {
             bool want = cfg != null && cfg.musicRealAudio && !string.IsNullOrEmpty(cfg.musicSong);
-            string key = want ? cfg.musicSong + "|" + cfg.musicStemLeadLayers + "|" + cfg.musicStemFixedLayers : null;
+            string key = want ? cfg.musicSong + "|" + cfg.musicStemLeadLayers + "|" + cfg.musicStemLeadOn + "|" + cfg.musicStemFixedLayers + "|" + cfg.musicStemFlowLayers : null;
             if (key == stemKey) return;
             UnloadStems();
             stemKey = key;
@@ -330,12 +443,14 @@ namespace UnderPressure
             string folder = "Songs/" + cfg.musicSong;
             var lead = LayerList(cfg.musicStemLeadLayers);
             var fixedLayers = LayerList(cfg.musicStemFixedLayers);
+            var flowLayers = LayerList(cfg.musicStemFlowLayers);
             var groups = new SortedDictionary<string, List<AudioClip>>();
             foreach (var clip in Resources.LoadAll<AudioClip>(folder))
             {
                 int us = clip.name.IndexOf('_');
                 if (us <= 0) { Resources.UnloadAsset(clip); continue; } // full mixes and anything not named layer_variant
                 string layer = clip.name.Substring(0, us).ToLowerInvariant();
+                if (!cfg.musicStemLeadOn && lead.Contains(layer)) { Resources.UnloadAsset(clip); continue; } // vocals switched off
                 if (!groups.TryGetValue(layer, out var list)) groups[layer] = list = new List<AudioClip>();
                 list.Add(clip);
             }
@@ -353,6 +468,7 @@ namespace UnderPressure
                 {
                     name = g.Key,
                     lead = lead.Contains(g.Key),
+                    flow = flowLayers.Contains(g.Key),
                     fixedPick = fixedLayers.Contains(g.Key),
                     variants = new AudioSource[g.Value.Count],
                     weight = new float[g.Value.Count],
@@ -385,7 +501,7 @@ namespace UnderPressure
             {
                 var clip = s.clip;
                 s.Stop();
-                Destroy(s);
+                Destroy(s.gameObject);
                 if (clip != null) Resources.UnloadAsset(clip);
             }
             stemSources.Clear();
@@ -402,7 +518,7 @@ namespace UnderPressure
             foreach (var layer in stems)
             {
                 if (looped && !layer.fixedPick) layer.current = PickVariant(layer);
-                float role = layer.lead ? stemLeadVol * leadMix : baseVol;
+                float role = layer.lead ? stemLeadVol * leadMix : layer.flow ? Mathf.Min(baseVol, stemFlowVol) : baseVol;
                 for (int i = 0; i < layer.variants.Length; i++)
                 {
                     // a fast crossfade (~40 ms) so the swap at the loop point doesn't click

@@ -31,7 +31,7 @@ MonoBehaviour:
   - 8
   - 16
   flowSpeedDefault: 2
-  panicPiecesAhead: 4
+  panicSeconds: 8
   moneyPerPiece: 1
   moneyScalesWithFlowSpeed: 1
   loopBonus: 10
@@ -68,13 +68,19 @@ MonoBehaviour:
   climbUpSeconds: 0.32
   loosePieceSlowdown: 0.16
   minLooseSpeedMultiplier: 0.55
+  enableGhost: 1
+  ghostSpeedMultiplier: 1.6
+  ghostFollow: 6
+  ghostHoverHeight: 0.45
   pickupRadius: 1.15
   placeProbeTiles: 0.35
+  previewOpacity: 0.7
+  previewGlow: 0.6
   unboltSeconds: 0.35
   unscrewSeconds: 1.4
   stealCooldown: 0.75
   enableVendingMachine: 1
-  waterBottlePrice: 0
+  waterBottlePrice: 400
   waterBottleCharges: 10
   waterBottleBuffSeconds: 45
   waterBottleSpeedMultiplier: 1.2
@@ -98,6 +104,7 @@ MonoBehaviour:
   spoonPrice: 2500
   filterFromChamber: 4
   filterGradeBonus: 0.5
+  filterDistanceBonus: 0.25
   inventoryWidth: 600
   inventoryRowHeight: 60
   inventoryTextScale: 0.9
@@ -117,78 +124,143 @@ MonoBehaviour:
     glow: {r: 0.25, g: 0.6, b: 1.3, a: 1}
     purifiesTo: FILTERED WATER
     concentratesTo: DIRTY WATER
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: DIRTY WATER
     fromChamber: 0
     color: {r: 0.42, g: 0.52, b: 0.4, a: 1}
     glow: {r: 0.22, g: 0.32, b: 0.18, a: 1}
     purifiesTo: WATER
     concentratesTo: SLIME
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: SLIME
-    fromChamber: 4
+    fromChamber: 0
     color: {r: 0.45, g: 0.72, b: 0.28, a: 1}
     glow: {r: 0.3, g: 0.95, b: 0.2, a: 1}
     purifiesTo: DIRTY WATER
     concentratesTo: TOXIC SLIME
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: TOXIC SLIME
     fromChamber: 4
     color: {r: 0.25, g: 1, b: 0.45, a: 1}
     glow: {r: 0.3, g: 2.2, b: 0.7, a: 1}
     purifiesTo: SLIME
     concentratesTo: TOXIC SLIME+
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: IRRADIATED
     fromChamber: 6
     color: {r: 0.75, g: 1, b: 0.15, a: 1}
     glow: {r: 1.8, g: 3.2, b: 0.3, a: 1}
     purifiesTo: FILTERED WATER
     concentratesTo: IRRADIATED+
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: VOID
     fromChamber: 8
     color: {r: 0.03, g: 0.02, b: 0.05, a: 1}
     glow: {r: 0.55, g: 0.15, b: 1.1, a: 1}
     purifiesTo: FILTERED WATER
     concentratesTo: VOID+
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: ???
     fromChamber: 10
     color: {r: 1, g: 1, b: 1, a: 1}
     glow: {r: 1, g: 1, b: 1, a: 1}
     purifiesTo: PROTOMATTER
     concentratesTo: ANTIMATTER
+    pattern: 1
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 2
+    patternSpeed: 1
   - name: PROTOMATTER
-    fromChamber: 10
+    fromChamber: 0
     color: {r: 1, g: 0.9, b: 0.62, a: 1}
     glow: {r: 2.4, g: 1.9, b: 0.9, a: 1}
     purifiesTo: PROTOMATTER+
     concentratesTo: ???
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: ANTIMATTER
-    fromChamber: 10
+    fromChamber: 0
     color: {r: 0.22, g: 0.02, b: 0.2, a: 1}
     glow: {r: 1.9, g: 0.15, b: 1.5, a: 1}
     purifiesTo: ???
     concentratesTo: ANTIMATTER+
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: FILTERED WATER
     fromChamber: 0
     color: {r: 0.58, g: 0.82, b: 1, a: 1}
     glow: {r: 0.52, g: 0.74, b: 0.9, a: 1}
     purifiesTo: PURE WATER
     concentratesTo: WATER
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: PURE WATER
     fromChamber: 0
     color: {r: 0.72, g: 0.9, b: 1, a: 1}
     glow: {r: 1, g: 1.26, b: 1.4, a: 1}
     purifiesTo: DEIONIZED WATER
     concentratesTo: FILTERED WATER
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: DEIONIZED WATER
     fromChamber: 0
     color: {r: 0.85, g: 0.97, b: 1, a: 1}
     glow: {r: 1.62, g: 1.84, b: 1.9, a: 1}
     purifiesTo: ULTRAPURE WATER
     concentratesTo: PURE WATER
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   - name: ULTRAPURE WATER
     fromChamber: 0
     color: {r: 0.94, g: 0.99, b: 1, a: 1}
     glow: {r: 2.2, g: 2.4, b: 2.5, a: 1}
     purifiesTo: ULTRAPURE WATER+
     concentratesTo: DEIONIZED WATER
+    pattern: 0
+    color2: {r: 0, g: 0, b: 0, a: 1}
+    glow2: {r: 0, g: 0, b: 0, a: 1}
+    patternScale: 1
+    patternSpeed: 1
   spoutHologramScale: 1.15
   filterLabelScale: 1
   filterLabelShowsMultiplier: 0
@@ -207,19 +279,31 @@ MonoBehaviour:
   unlockAllCosmetics: 0
   testOwnAllItems: 0
   resetUnlocksOnPlay: 0
-  musicVolume: 0.55
-  musicLeadVolume: 0.7
-  musicHarmonyVolume: 0.3
-  musicVhsAmount: 1
-  musicTempoFollowsFlow: 0.3
+  musicVolume: 0.7
+  musicLeadVolume: 0.8
+  musicHarmonyVolume: 1
+  musicVhsAmount: 0.2
+  musicTempoFollowsFlow: 0.8
   musicPitchSemitones: -3
   musicSpeed: 0.84
   musicPanicVolume: 1.4
+  musicPanicRiser: 1
+  musicRiserSeconds: 20
+  musicRiserVolume: 0.6
+  musicRiserRootNote: 57
+  musicPanicDuck: 0.3
+  musicPanicMuffle: 0.6
+  musicHeartbeat: 1
+  musicHeartbeatVolume: 0.8
+  musicHeartbeatSplitSeconds: 1.5
   musicRealAudio: 1
-  musicSong: Overflow
+  musicSong: ohno
   musicStemLeadLayers: vocals
   musicStemLeadInChambers: 0
+  musicStemLeadOn: 1
   musicStemFixedLayers: drums
+  musicStemFlowLayers: synth
+  musicStemFlowInSeconds: 8
   screenShakeScale: 1
   hitStop: 1
   sfxVolume: 0.8

@@ -5,8 +5,8 @@ using UnityEngine.InputSystem;
 namespace UnderPressure
 {
     /// <summary>
-    /// Drop-in co-op: Space (WASD side), Enter (arrow side), or (A), (X) or Start on any gamepad joins a new player,
-    /// up to 4. Players can leave from the pause menu. Lives on the bootstrap object so joined players survive a
+    /// Drop-in co-op: Space (WASD side), Enter (arrow side), (A), (X) or Start on any gamepad, or a mouse click (the
+    /// ghost) joins a new player, up to 4. Players can leave from the pause menu. Lives on the bootstrap object so joined players survive a
     /// level restart.
     /// </summary>
     public class JoinManager : MonoBehaviour
@@ -83,6 +83,11 @@ namespace UnderPressure
                          && !HasScheme(ControlScheme.KeyboardArrows))
                     Join(ControlScheme.KeyboardArrows, kb);
             }
+            // a click joins the ghost (one mouse, one ghost); not the click that just closed the pause menu
+            var mouse = Mouse.current;
+            if (mouse != null && mouse.leftButton.wasPressedThisFrame && Game.Config != null && Game.Config.enableGhost
+                && !HasScheme(ControlScheme.Mouse) && Time.frameCount - PauseMenu.ClosedFrame > 1 && Slots.Count < MaxPlayers)
+                Join(ControlScheme.Mouse, mouse);
             foreach (var gp in Gamepad.all)
             {
                 if (Slots.Count >= MaxPlayers) break;
@@ -146,6 +151,7 @@ namespace UnderPressure
             {
                 case ControlScheme.KeyboardWASD: return "WASD";
                 case ControlScheme.KeyboardArrows: return "ARROWS";
+                case ControlScheme.Mouse: return "GHOST";
                 default: return "PAD";
             }
         }
