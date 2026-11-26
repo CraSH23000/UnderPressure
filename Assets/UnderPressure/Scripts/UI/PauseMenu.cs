@@ -126,6 +126,15 @@ namespace UnderPressure
         /// <summary>The frame the menu last closed on (so the click that closed it doesn't also join a ghost).</summary>
         public static int ClosedFrame = -10;
 
+        /// <summary>Did the menu close this frame or the last one?</summary>
+        public static bool JustClosed { get { int d = Time.frameCount - ClosedFrame; return d >= 0 && d <= 1; } }
+
+        // Domain reload is off in this project (Enter Play Mode Options), so statics outlive a play session while
+        // Time.frameCount starts again from 0: a ClosedFrame left over from the last session would otherwise read as
+        // "the menu is still just closing" (blocking ghost joins and grabs) until the menu was opened and closed again.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => ClosedFrame = -10;
+
         void Close()
         {
             ClosedFrame = Time.frameCount;

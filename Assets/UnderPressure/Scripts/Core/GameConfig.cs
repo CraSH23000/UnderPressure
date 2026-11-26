@@ -330,11 +330,13 @@ namespace UnderPressure
         [Tooltip("Off: the lead stems (vocals) never play at all (they aren't even loaded).")]
         public bool musicStemLeadOn = true;
         [Tooltip("Stem layers picked once per song and never swapped, comma-separated. Every other layer re-rolls its variant each time the loop comes round.")]
-        public string musicStemFixedLayers = "drums";
+        public string musicStemFixedLayers = "";
         [Tooltip("Stem layers that build up into the flow (comma-separated, e.g. \"synth\"): silent at the base and off the clock, they creep in over the countdown's last seconds and play in full while the liquid flows. Blank = every non-lead layer plays all the time.")]
         public string musicStemFlowLayers = "synth";
         [Tooltip("How many seconds before the countdown ends the flow layers start creeping in (they reach full volume at zero).")]
         public float musicStemFlowInSeconds = 8f;
+        [Tooltip("Music grime gained per chamber (chamber 1 = 0). A song's Song asset gates its variants by this, separate from the lab's look: 0.1 reaches full grime at chamber 11.")]
+        public float musicGrimePerChamber = 0.1f;
 
         [Header("Feel & sound")]
         public float screenShakeScale = 1f;

@@ -1,0 +1,103 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e093378f093e4e93b1f570c19d2fb651, type: 3}
+  m_Name: Song
+  m_EditorClassIdentifier: 
+  layers:
+  - name: bass
+    variants:
+    - clip: bass_007
+      minGrime: 0.1
+      maxGrime: 1
+      weight: 1
+    - clip: bass_014
+      minGrime: 0
+      maxGrime: 1
+      weight: 1
+    - clip: bass_017
+      minGrime: 0
+      maxGrime: 1
+      weight: 1
+    - clip: bass_027
+      minGrime: 0.8
+      maxGrime: 1
+      weight: 1
+    - clip: bass_029
+      minGrime: 0.6
+      maxGrime: 1
+      weight: 1
+    - clip: bass_036
+      minGrime: 0.7
+      maxGrime: 1
+      weight: 1
+    - clip: bass_039
+      minGrime: 0.99
+      maxGrime: 1
+      weight: 1
+  - name: drums
+    variants:
+    - clip: drums_003
+      minGrime: 0.2
+      maxGrime: 1
+      weight: 1
+    - clip: drums_100
+      minGrime: 0
+      maxGrime: 1
+      weight: 1
+  - name: synth
+    variants:
+    - clip: synth_010
+      minGrime: 0
+      maxGrime: 1
+      weight: 1
+    - clip: synth_013
+      minGrime: 0
+      maxGrime: 1
+      weight: 1
+    - clip: synth_016
+      minGrime: 0
+      maxGrime: 0.5
+      weight: 1
+    - clip: synth_018
+      minGrime: 0
+      maxGrime: 1
+      weight: 1
+    - clip: synth_026
+      minGrime: 0.4
+      maxGrime: 1
+      weight: 1
+    - clip: synth_029
+      minGrime: 0.2
+      maxGrime: 1
+      weight: 1
+    - clip: synth_032
+      minGrime: 0.99
+      maxGrime: 1
+      weight: 1
+    - clip: synth_042
+      minGrime: 0.1
+      maxGrime: 1
+      weight: 1
+    - clip: synth_043
+      minGrime: 0
+      maxGrime: 0.8
+      weight: 1
+  - name: vocals
+    variants:
+    - clip: vocals_029
+      minGrime: 0
+      maxGrime: 1
+      weight: 1
+    - clip: vocals_070
+      minGrime: 0
+      maxGrime: 1
+      weight: 0.9

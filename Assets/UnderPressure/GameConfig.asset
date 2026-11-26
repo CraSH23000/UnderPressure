@@ -289,21 +289,22 @@ MonoBehaviour:
   musicPanicVolume: 1.4
   musicPanicRiser: 1
   musicRiserSeconds: 20
-  musicRiserVolume: 0.6
-  musicRiserRootNote: 57
+  musicRiserVolume: 2
+  musicRiserRootNote: 10
   musicPanicDuck: 0.3
   musicPanicMuffle: 0.6
   musicHeartbeat: 1
-  musicHeartbeatVolume: 0.8
-  musicHeartbeatSplitSeconds: 1.5
+  musicHeartbeatVolume: 2
+  musicHeartbeatSplitSeconds: 0.4
   musicRealAudio: 1
   musicSong: ohno
   musicStemLeadLayers: vocals
   musicStemLeadInChambers: 0
   musicStemLeadOn: 1
-  musicStemFixedLayers: drums
+  musicStemFixedLayers: 
   musicStemFlowLayers: synth
   musicStemFlowInSeconds: 8
+  musicGrimePerChamber: 0.1
   screenShakeScale: 1
   hitStop: 1
   sfxVolume: 0.8

@@ -264,7 +264,7 @@ namespace UnderPressure
 
             bool over = Game.Manager != null && Game.Manager.IsOver;
             bool menuFrame = false;
-            if (IsGhost && Time.frameCount - PauseMenu.ClosedFrame <= 1) menuFrame = true; // the click that closed the menu isn't a grab
+            if (IsGhost && PauseMenu.JustClosed) menuFrame = true; // the click that closed the menu isn't a grab
             if (IsGhost) GhostMove(dt);
             else
             {

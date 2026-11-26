@@ -86,7 +86,7 @@ namespace UnderPressure
             // a click joins the ghost (one mouse, one ghost); not the click that just closed the pause menu
             var mouse = Mouse.current;
             if (mouse != null && mouse.leftButton.wasPressedThisFrame && Game.Config != null && Game.Config.enableGhost
-                && !HasScheme(ControlScheme.Mouse) && Time.frameCount - PauseMenu.ClosedFrame > 1 && Slots.Count < MaxPlayers)
+                && !HasScheme(ControlScheme.Mouse) && !PauseMenu.JustClosed && Slots.Count < MaxPlayers)
                 Join(ControlScheme.Mouse, mouse);
             foreach (var gp in Gamepad.all)
             {

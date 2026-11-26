@@ -28,21 +28,26 @@ If the game crashed or misbehaved, attach the log too (paste these paths into Fi
 
 ## Controls
 
-Nobody is in the level until someone joins. Press your join button at any time to drop in.
+Nobody is in the level until someone joins. Press your join button at any time to drop in (up to 4 players). Two people can share one keyboard.
 
-| | Gamepad | Keyboard: WASD side | Keyboard: Arrows side |
+| | Gamepad (any number) | Keyboard: WASD side | Keyboard: Arrows side |
 |---|---|---|---|
 | **Join** | A, X or Start | Space or E | Enter or Right Ctrl |
 | Move | Left stick / D-pad | WASD | Arrow keys |
-| Jump | A | Space | Right Ctrl |
-| Use: grab · place · steal · **hold** to unscrew/swap | X | E | Enter |
-| Rotate CCW / CW | Y / B | F / G | `;` / `'` |
-| Dash | Left Trigger | Left Shift | Right Shift |
+| Jump (vault one pipe, climb onto a run) | A | Space | Right Ctrl (Numpad 0) |
+| Use: grab · place · steal · **hold** to unscrew/swap | X | E | Enter (Numpad Enter) |
+| Rotate CCW / CW | Y / B | F / G | `;` / `'` (Numpad 1 / 2) |
+| Dash | Left Trigger | Left Shift | Right Shift (Numpad .) |
 | Inventory | View (Select) | Tab | Backspace |
 | Item buttons 1 · 2 · 3 | RT · LB · RB | 1 · 2 · 3 | End · PgDn · PgUp |
-| Pause | Start | Esc | Esc |
+| Pause (R / Select restarts from it) | Start | Esc | Esc |
+| Play again (end screen) | A / X / Start | Space / E | Enter |
 
-The full rules, items, unlocks and tuning notes are in [`Assets/UnderPressure/README.md`](Assets/UnderPressure/README.md).
+Start on a controller nobody is playing on joins instead of pausing.
+
+**Ghost (mouse):** click to join as a ghost that floats after your cursor. A glowing lure marks your cursor. Click the floor to float there (hold to chase the cursor); click something (a piece, a tile, the valve) and the ghost floats over and does it. Scroll = rotate, right click = cancel / drop. No jumping, items or lockers; a good seat for anyone who doesn't play with a controller. In menus: stick, D-pad, WASD or arrows move; A, Start, Space, Enter or a click confirms; B, Esc or Backspace goes back.
+
+How everything works (rules, liquids, items, unlocks and every tuning setting) is in [`docs/GAME.md`](docs/GAME.md).
 
 ## Build from source
 
@@ -71,9 +76,11 @@ Assets/UnderPressure/
 ├─ Resources/          critter FBX models, UI icons, shader keep-alive materials
 ├─ CharacterFactory~/  Blender (bpy) scripts that generate the critters and icons (Unity ignores this folder)
 ├─ Scenes/             the bootstrap scene
-├─ GameConfig.asset    every tunable value
-└─ README.md           detailed gameplay & systems documentation
-UnderPressure_Handoff.md   design notes, decisions and the to-do list
+├─ Resources/Songs/    music stems
+└─ GameConfig.asset    every tunable value
+docs/
+├─ GAME.md             how the game works: every system and its config settings
+└─ HANDOFF.md          how we work, design decisions, the to-do list, playtest checks
 ```
 
 ## Making a release (maintainers)
@@ -85,7 +92,7 @@ UnderPressure_Handoff.md   design notes, decisions and the to-do list
 
 ## Status
 
-An early, actively developed prototype. Expect rough edges, placeholder art in places, and balance that changes often. See [`UnderPressure_Handoff.md`](UnderPressure_Handoff.md) for what's planned.
+An early, actively developed prototype. Expect rough edges, placeholder art in places, and balance that changes often. See [`docs/HANDOFF.md`](docs/HANDOFF.md) for what's planned.
 
 ## License
 
