@@ -5,8 +5,7 @@ namespace UnderPressure
 {
     /// <summary>
     /// Government-funded teleporter chamber: riveted steel base, an arch of pipes with a downward emitter,
-    /// twin Tesla coils and an amperage meter. Its plaque records the lab's history of rebranding:
-    /// INCINERATOR (struck out) → CLONE REINTEGRATION (struck out) → TELEPORTER.
+    /// twin Tesla coils and an amperage meter. Its plaque shows where it goes on a big LED strip.
     /// Charge it by everyone standing on teleporters; at full charge, lightning.
     /// </summary>
     public class ReadyPad : MonoBehaviour
@@ -22,10 +21,13 @@ namespace UnderPressure
         public string Question => Destination == Kind.Retry ? "RETRY?" : Destination == Kind.Next ? "NEXT CHAMBER?" : Destination == Kind.Base ? "BACK TO BASE?" : $"CHAMBER {TargetChamber:00}?";
         public string Answer => Destination == Kind.Retry ? "RETRY" : Destination == Kind.Next ? "NEXT CHAMBER" : Destination == Kind.Base ? "BACK TO BASE" : $"CHAMBER {TargetChamber:00}";
         public float Radius { get; private set; } = 1.0f;
+        /// <summary>How far the round pad (with its hazard ticks) reaches from the centre: the layout leaves room for it.</summary>
+        public const float FootprintRadius = 1.41f;
+        /// <summary>Half the width of its floor hatch, frame included.</summary>
+        public const float HatchHalfWidth = ShaftHalfX + 0.14f;
         public int Occupants { get; set; }
 
         const float ArchHalf = 1.35f, ArchHeight = 2.9f, CoilX = 2.05f, CoilTop = 1.95f;
-        static readonly Color Red = new Color(0.85f, 0.08f, 0.08f);
 
         Color color;
         Material ringMat, emitterMat, arcMat, boltMat, coilTopMat;
@@ -49,7 +51,8 @@ namespace UnderPressure
             p.Destination = kind;
             p.TargetChamber = targetChamber;
             p.color = kind == Kind.Next ? Mats.Liquid : kind == Kind.Base ? new Color(0.85f, 0.92f, 1f)
-                : kind == Kind.Chamber ? (targetChamber <= 1 ? Theme.AccentOrange : Mats.Liquid) : Theme.AccentOrange;
+                : kind == Kind.Chamber ? (targetChamber == GameManager.BossFloor ? Mats.Danger : targetChamber <= 1 ? Theme.AccentOrange : Mats.Liquid)
+                : Theme.AccentOrange;
             p.Build(destinationLabel);
             p.BuildHatch(parent, pos, delay);
             return p;
@@ -59,7 +62,7 @@ namespace UnderPressure
         // The teleporter waits in a shaft under the floor. Hazard doors retract into a frame, it rides up, and lands
         // with a thunk. The frame stays behind as the platform it stands on.
 
-        const float ShaftDepth = 4.2f, ShaftHalfX = 2.35f, ShaftHalfZ = 1.5f;
+        const float ShaftDepth = 4.2f, ShaftHalfX = 2.35f, ShaftHalfZ = 1.15f; // fits the 2.6-deep walkway lane (frame included)
         const float DoorTime = 0.5f, RideTime = 1.35f;
         Transform hatch, doorL, doorR;
         Renderer shaft;
@@ -73,16 +76,68 @@ namespace UnderPressure
         void BuildHatch(Transform parent, Vector3 pos, float delay)
         {
             elevDelay = delay;
+            shaftDark = Mats.Lit(new Color(0.01f, 0.01f, 0.015f), 0f);
+            shaftPlate = Mats.Lit(new Color(0.3f, 0.32f, 0.36f), 0.5f, 0.7f);
+            hatch = HatchVisual(parent, pos, "TeleporterHatch", shaftDark, out shaft, out doorL, out doorR);
+            // start in the shaft
+            transform.position = pos - Vector3.up * ShaftDepth;
+            transform.localScale = Vector3.one;
+            elevT = 0f;
+        }
+
+        /// <summary>
+        /// A floor that's still locked: the same hatch, shut, with its number stencilled across the doors.
+        /// </summary>
+        public static GameObject CreateLockedHatch(Transform parent, Vector3 pos, int chamber)
+        {
+            var h = HatchVisual(parent, pos, "LockedHatch_" + chamber, Mats.Lit(new Color(0.01f, 0.01f, 0.015f), 0f), out _, out _, out _);
+            var cgo = new GameObject("Stencil", typeof(RectTransform));
+            cgo.transform.SetParent(h, false);
+            cgo.transform.localPosition = new Vector3(0f, 0.05f, 0f);
+            cgo.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // lying flat, readable from the front
+            var canvas = cgo.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            cgo.AddComponent<CanvasScaler>().dynamicPixelsPerUnit = 3f;
+            var rt = (RectTransform)cgo.transform;
+            rt.sizeDelta = new Vector2(400, 200);
+            rt.localScale = Vector3.one * (ShaftHalfX * 1.6f / 400f);
+            var ink = chamber == GameManager.BossFloor ? Mats.Danger : Theme.Hazard; // the boss floor's in red
+            var paint = new Color(ink.r, ink.g, ink.b, 0.55f);
+            Stencil(rt, chamber.ToString("00"), 120, 22f, paint);
+            Stencil(rt, "LOCKED", 34, -62f, paint);
+            return h.gameObject;
+        }
+
+        static void Stencil(RectTransform parent, string text, int size, float y, Color c)
+        {
+            var go = new GameObject(text, typeof(RectTransform));
+            var r = (RectTransform)go.transform;
+            r.SetParent(parent, false);
+            r.anchoredPosition = new Vector2(0, y);
+            r.sizeDelta = new Vector2(400, size + 10);
+            var t = go.AddComponent<Text>();
+            t.font = Popup.Font;
+            t.text = text;
+            t.fontSize = size;
+            t.fontStyle = FontStyle.Bold;
+            t.alignment = TextAnchor.MiddleCenter;
+            t.color = c;
+            t.horizontalOverflow = HorizontalWrapMode.Overflow;
+            t.raycastTarget = false;
+        }
+
+        /// <summary>Shaft, frame and the two hazard-striped doors (closed).</summary>
+        static Transform HatchVisual(Transform parent, Vector3 pos, string name, Material shaftMat, out Renderer shaft, out Transform doorL, out Transform doorR)
+        {
             var darkSteel = Mats.Lit(new Color(0.16f, 0.17f, 0.2f), 0.6f, 0.8f);
             var hazardY = Mats.Lit(Theme.Hazard, 0.4f);
             var ink = Mats.Lit(Theme.Ink, 0.5f, 0.4f);
-            hatch = new GameObject("TeleporterHatch").transform;
+            var hatch = new GameObject(name).transform;
             hatch.SetParent(parent, false);
             hatch.position = new Vector3(pos.x, 0f, pos.z);
+            doorL = doorR = null;
             // the dark shaft (drawn just above the floor, so it hides the teleporter until it pokes out)
-            shaftDark = Mats.Lit(new Color(0.01f, 0.01f, 0.015f), 0f);
-            shaftPlate = Mats.Lit(new Color(0.3f, 0.32f, 0.36f), 0.5f, 0.7f);
-            shaft = Prims.Make(PrimitiveType.Cube, hatch, new Vector3(0, 0.006f, 0), new Vector3(ShaftHalfX * 2f, 0.008f, ShaftHalfZ * 2f), shaftDark, null, "Shaft").GetComponent<Renderer>();
+            shaft = Prims.Make(PrimitiveType.Cube, hatch, new Vector3(0, 0.006f, 0), new Vector3(ShaftHalfX * 2f, 0.008f, ShaftHalfZ * 2f), shaftMat, null, "Shaft").GetComponent<Renderer>();
             // frame
             float fw = 0.14f;
             for (int s = -1; s <= 1; s += 2)
@@ -104,10 +159,7 @@ namespace UnderPressure
                 }
                 if (s < 0) doorL = d; else doorR = d;
             }
-            // start in the shaft
-            transform.position = pos - Vector3.up * ShaftDepth;
-            transform.localScale = Vector3.one;
-            elevT = 0f;
+            return hatch;
         }
 
         void UpdateElevator(float dt)
@@ -271,20 +323,27 @@ namespace UnderPressure
             rt.sizeDelta = new Vector2(560, 184);
             rt.localScale = Vector3.one * (2.8f / 560f);
 
-            var engraved = new Color(0.12f, 0.13f, 0.15f);
             Line(rt, "DEPT. OF SUBJECT LOGISTICS  ·  UNIT 7-B", 17, 74f, new Color(0.2f, 0.21f, 0.24f), FontStyle.Normal);
-            Struck(rt, "INCINERATOR", 30, 46f, engraved);
-            Struck(rt, "CLONE REINTEGRATION", 26, 14f, engraved);
-            Line(rt, "TELEPORTER", 44, -24f, Red, FontStyle.Bold);
-            // destination on a little LED strip
+            // the destination, as big as the plaque allows, on an LED strip filling the rest of it
+            const float ledY = -12f;
             var led = new GameObject("LED", typeof(RectTransform));
             var lr = (RectTransform)led.transform;
             lr.SetParent(rt, false);
-            lr.anchoredPosition = new Vector2(0, -68f);
-            lr.sizeDelta = new Vector2(420, 36);
-            led.AddComponent<Image>().color = new Color(0.03f, 0.04f, 0.04f);
-            Line(rt, destination, 24, -68f, Destination == Kind.Next || (Destination == Kind.Chamber && TargetChamber > 1) ? new Color(0.35f, 1f, 0.5f)
+            lr.anchoredPosition = new Vector2(0, ledY);
+            lr.sizeDelta = new Vector2(530, 136);
+            var ledImg = led.AddComponent<Image>();
+            ledImg.color = new Color(0.03f, 0.04f, 0.04f);
+            ledImg.raycastTarget = false;
+            var t = Line(rt, destination, 96, ledY, Destination == Kind.Chamber && TargetChamber == GameManager.BossFloor ? new Color(1f, 0.3f, 0.25f)
+                : Destination == Kind.Next || (Destination == Kind.Chamber && TargetChamber > 1) ? new Color(0.35f, 1f, 0.5f)
                 : Destination == Kind.Base ? new Color(0.75f, 0.88f, 1f) : new Color(1f, 0.65f, 0.2f), FontStyle.Bold);
+            // anything too long for the strip shrinks to fit
+            t.rectTransform.sizeDelta = new Vector2(500, 124);
+            t.horizontalOverflow = HorizontalWrapMode.Wrap;
+            t.verticalOverflow = VerticalWrapMode.Truncate;
+            t.resizeTextForBestFit = true;
+            t.resizeTextMinSize = 20;
+            t.resizeTextMaxSize = 96;
         }
 
         static Text Line(RectTransform parent, string text, int size, float y, Color c, FontStyle style = FontStyle.Bold)
@@ -304,21 +363,6 @@ namespace UnderPressure
             t.horizontalOverflow = HorizontalWrapMode.Overflow;
             t.raycastTarget = false;
             return t;
-        }
-
-        /// <summary>Engraved text with a red stripe of paint across it, like someone updated the plaque on the cheap.</summary>
-        static void Struck(RectTransform parent, string text, int size, float y, Color c)
-        {
-            var t = Line(parent, text, size, y, c);
-            var strike = new GameObject("Strike", typeof(RectTransform));
-            var r = (RectTransform)strike.transform;
-            r.SetParent(parent, false);
-            r.anchoredPosition = new Vector2(0, y - 1f);
-            r.sizeDelta = new Vector2(t.preferredWidth + 16f, Mathf.Max(4f, size * 0.16f));
-            r.localRotation = Quaternion.Euler(0, 0, Random.Range(-2.5f, 2.5f));
-            var img = strike.AddComponent<Image>();
-            img.color = Red;
-            img.raycastTarget = false;
         }
 
         LineRenderer MakeLine(string name, Material mat, float width)

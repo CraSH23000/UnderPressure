@@ -413,14 +413,31 @@ namespace UnderPressure
         /// The ghost floats after the cursor: it chases it at up to walking speed (it doesn't teleport, so carrying a
         /// piece across the room still takes a trip), drifting over pipes, the belt and the pit, bobbing as it goes.
         /// </summary>
+        /// <summary>The room grew: where you can walk now.</summary>
+        public void SetWalkArea(Rect walkable) => walkArea = walkable;
+
+        /// <summary>The room grew and the floor you stand on moved with it (the teleporter room): move along.</summary>
+        public void ShiftBy(Vector3 delta)
+        {
+            bool was = cc.enabled;
+            cc.enabled = false;
+            transform.position += delta;
+            ghostCursor += delta;
+            cc.enabled = was;
+        }
+
         void GhostMove(float dt)
         {
             if (cc.enabled) cc.enabled = false; // nothing blocks a ghost, and it blocks nobody
             mode = Mode.Walk;
             if (CursorOnFloor(out Vector3 cursor))
             {
-                cursor.x = Mathf.Clamp(cursor.x, walkArea.xMin + 0.3f, walkArea.xMax - 0.3f);
-                cursor.z = Mathf.Clamp(cursor.z, walkArea.yMin + 0.3f, walkArea.yMax - 0.3f);
+                // the open secret room (and its doorway) count as floor too
+                if (SecretDoor.Instance == null || !SecretDoor.Instance.IsWalkable(cursor))
+                {
+                    cursor.x = Mathf.Clamp(cursor.x, walkArea.xMin + 0.3f, walkArea.xMax - 0.3f);
+                    cursor.z = Mathf.Clamp(cursor.z, walkArea.yMin + 0.3f, walkArea.yMax - 0.3f);
+                }
                 cursor.y = 0f;
                 ghostCursor = cursor;
             }
@@ -620,7 +637,7 @@ namespace UnderPressure
             }
 
             // riding the floor-level belt
-            Vector3 carry = mode == Mode.Walk && !Airborne ? belt.SurfaceVelocity(Pos) : Vector3.zero;
+            Vector3 carry = mode == Mode.Walk && !Airborne ? belt.SurfaceVelocity(Pos) + DecorBelt.CarryAt(Pos) : Vector3.zero;
             cc.Move((vel + carry + Vector3.down * 4f) * dt);
 
             if (mode == Mode.Walk)

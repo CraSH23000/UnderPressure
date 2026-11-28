@@ -40,6 +40,8 @@ namespace UnderPressure
 
         // intermission (between chambers)
         bool intermission, teleporting;
+        /// <summary>The lightning has struck: the level is about to be rebuilt somewhere else.</summary>
+        public bool Teleporting => teleporting;
         readonly System.Collections.Generic.List<ReadyPad> pads = new System.Collections.Generic.List<ReadyPad>();
         float charge;           // teleporter charge 0..1 (builds while everyone stands on one)
         AudioSource hum;
@@ -386,6 +388,13 @@ namespace UnderPressure
             Game.Conveyor?.ResetSpeed(); // off the clock: idle speed, lever back to default (still usable)
             Progress.OnSpill(pos, dir);
             FunnelCatch(pos, dir);
+            if (Game.Bootstrap != null && !Game.Bootstrap.InBase)
+            {
+                // what spilled moves the lab's grime, shown as a ring rolling out from here
+                float want = flow.SpillGrade.SpillGrime;
+                float applied = Game.Bootstrap.AddGrime(want);
+                if (GrimeOverlay.I != null) GrimeOverlay.I.Ring(pos, applied, want);
+            }
             board.Spout.Hologram.Set(Current == State.Won ? "PASSED" : "SPILLED", "", Current != State.Won);
             Juice.SlowMo(0.25f, 0.9f);
             if (flow.LastSpillBurst)
@@ -460,26 +469,156 @@ namespace UnderPressure
                 return;
             }
             if (!lobbyCam && Game.Cam != null && Game.Monitor != null) { lobbyCam = true; Game.Cam.BeginFollow(Game.Monitor.Center); }
-            if (pads.Count == 0) CreateBasePads();
+            if (pads.Count == 0 && pendingPads == null) CreateBasePads();
             board.Spout.Hologram.Set("PRACTICE", "no clock at the base", false);
             UpdateBaseMonitor();
             UpdateTeleporters();
         }
 
-        /// <summary>The way out: chamber 01, plus "continue" to the deepest chamber you've reached.</summary>
-        void CreateBasePads()
+        // =================================================================== teleporters (in the secret room)
+
+        /// <summary>Teleporters waiting for someone to walk into the secret room.</summary>
+        System.Action pendingPads;
+        /// <summary>How the teleporters were last called up (to call them up again if the room grows around them).</summary>
+        System.Action lastPads;
+        readonly System.Collections.Generic.List<GameObject> lockedHatches = new System.Collections.Generic.List<GameObject>();
+
+        /// <summary>
+        /// The room grew (someone joined): the secret room was rebuilt bigger and further over, so any teleporters
+        /// already called up go and come up again in their new spots (straight away if someone's in there).
+        /// </summary>
+        public void OnRoomGrown()
+        {
+            if (lastPads == null) return; // nobody has called them up yet
+            foreach (var p in pads) if (p != null) Destroy(p.gameObject);
+            pads.Clear();
+            foreach (var h in lockedHatches) if (h != null) Destroy(h);
+            lockedHatches.Clear();
+            charge = 0f;
+            teleporterBelt = teleporterBeltLeft = null; // (they went with the old room)
+            QueuePads(lastPads);
+        }
+
+        /// <summary>
+        /// The teleporters live behind the secret door: open it now, and bring them up out of the floor once someone
+        /// walks in. (No secret door: straight away, in the chamber.)
+        /// </summary>
+        void QueuePads(System.Action make)
+        {
+            var door = SecretDoor.Instance;
+            lastPads = make;
+            if (door == null) { make(); return; }
+            pendingPads = make;
+            BuildTeleporterBelt();
+            door.Open();
+        }
+
+        DecorBelt teleporterBelt, teleporterBeltLeft;
+
+        /// <summary>
+        /// The secret room's express belts (32x), both ending lined up with the boss floor's teleporter, a strip of
+        /// floor short of it. Right: up out of a chute just past the doorway, along the back at the same depth as the
+        /// chamber's top belt, south down the gap between the teleporters and the far wall, then west. Left: up out of
+        /// a chute just south of the doorway (which stays clear), south down the gap by the near wall, then east.
+        /// You can ride them.
+        /// </summary>
+        void BuildTeleporterBelt()
+        {
+            var door = SecretDoor.Instance;
+            if (door == null || teleporterBelt != null) return;
+            // a narrow room (it grows with the players) has no space for them beside the teleporters
+            if (door.Room.width * 0.5f < 9.5f) return;
+            float hw = GameBootstrap.BeltHalfWidth, backZ = Game.Bootstrap.TopBeltZ, speed = cfg.beltSpeed * 32f;
+            var boss = FloorSpot(BossFloor - 1, out _);
+            float endGap = ReadyPad.HatchHalfWidth + 1.0f; // stops short: riders land on a strip of floor first
+
+            float eastX = door.Room.xMax - hw - 0.15f;
+            teleporterBelt = DecorBelt.Create(door.RoomRoot, new[]
+            {
+                new Vector3(door.Room.xMin + 3f, 0f, backZ), new Vector3(eastX, 0f, backZ),
+                new Vector3(eastX, 0f, boss.z), new Vector3(boss.x + endGap, 0f, boss.z),
+            }, hw, speed);
+
+            float westX = door.Room.xMin + hw + 0.15f;
+            float startZ = door.DoorZ0 - 0.7f; // its chute sits just south of the doorway
+            teleporterBeltLeft = DecorBelt.Create(door.RoomRoot, new[]
+            {
+                new Vector3(westX, 0f, startZ), new Vector3(westX, 0f, boss.z), new Vector3(boss.x - endGap, 0f, boss.z),
+            }, hw, speed);
+        }
+
+        void UpdatePendingPads()
+        {
+            if (pendingPads == null) return;
+            var door = SecretDoor.Instance;
+            if (door != null && !door.AnyoneInside) return;
+            var make = pendingPads;
+            pendingPads = null;
+            make();
+        }
+
+        /// <summary>
+        /// Floors with a teleporter (or a locked hatch) of their own in the secret room: three to a row, and the last
+        /// one (the boss floor) on its own row at the front. Deeper floors will get a room of their own.
+        /// </summary>
+        const int FloorCount = 10, FloorCols = 3;
+        public const int BossFloor = FloorCount;
+
+        /// <summary>
+        /// The front row of the secret room (retry / base / next): dx teleporter-spacings right of its centre, just in
+        /// front of the fast belt (which runs at the same depth as the chamber's top belt).
+        /// (No secret door: the old spot in the chamber's top lane.)
+        /// </summary>
+        Vector3 PadSpot(float dx)
         {
             var bs = Game.Bootstrap;
+            var door = SecretDoor.Instance;
+            if (door == null) return bs.PadAnchor + Vector3.right * dx * bs.PadSpacing;
+            float z = bs.TopBeltZ - GameBootstrap.BeltHalfWidth - 0.12f - 0.25f - ReadyPad.FootprintRadius;
+            return new Vector3(door.Room.center.x + dx * bs.PadSpacing, 0f, z);
+        }
+
+        /// <summary>
+        /// Floor i (0 = chamber 01): rows of three below the front row, left to right; the boss floor alone and centred
+        /// in front. Row spacing shrinks to fit the room (but keeps a walkway between rows).
+        /// </summary>
+        Vector3 FloorSpot(int i, out float delay)
+        {
+            var top = PadSpot(0f);
+            int rows = (FloorCount - 2) / FloorCols + 2; // full rows of three, plus the boss row
+            float room = top.z - ReadyPad.FootprintRadius - (SecretDoor.Instance.Room.yMin + 0.2f);
+            float pitch = Mathf.Clamp(room / rows, 3.1f, 4.6f); // (packs tighter in a small room: it grows with the players)
+            bool boss = i == BossFloor - 1;
+            int row = boss ? rows - 1 : i / FloorCols, col = boss ? 1 : i % FloorCols;
+            delay = 0.6f + i * 0.22f + (boss ? 0.5f : 0f); // up one after the other after the front row, the boss last
+            return new Vector3(top.x + (col - (FloorCols - 1) * 0.5f) * Game.Bootstrap.PadSpacing, 0f, top.z - pitch * (row + 1));
+        }
+
+        /// <summary>A teleporter for every floor reached so far, and a shut hatch for each one still locked.</summary>
+        void AddFloorGrid()
+        {
+            if (SecretDoor.Instance == null) return;
             int furthest = Progress.Furthest;
-            if (furthest <= 1)
-                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor, ReadyPad.Kind.Chamber, "START:  CHAMBER 01", 0.2f, 1));
+            for (int c = 1; c <= FloorCount; c++)
+            {
+                var at = FloorSpot(c - 1, out float delay);
+                if (c <= furthest) pads.Add(ReadyPad.Create(Game.LevelRoot, at, ReadyPad.Kind.Chamber, $"CHAMBER {c:00}", delay, c));
+                else lockedHatches.Add(ReadyPad.CreateLockedHatch(Game.LevelRoot, at, c));
+            }
+        }
+
+        /// <summary>The way out: chamber 01, plus "continue" to the deepest chamber you've reached.</summary>
+        void CreateBasePads() => QueuePads(() =>
+        {
+            if (SecretDoor.Instance != null) AddFloorGrid(); // every floor reached so far
             else
             {
-                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor - Vector3.right * bs.PadSpacing * 0.5f, ReadyPad.Kind.Chamber, "FROM THE TOP:  CHAMBER 01", 0.2f, 1));
-                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor + Vector3.right * bs.PadSpacing * 0.5f, ReadyPad.Kind.Chamber, $"CONTINUE:  CHAMBER {furthest:00}", 0.5f, furthest));
+                int furthest = Progress.Furthest;
+                pads.Add(ReadyPad.Create(Game.LevelRoot, PadSpot(furthest <= 1 ? 0f : -0.5f), ReadyPad.Kind.Chamber, "CHAMBER 01", 0.2f, 1));
+                if (furthest > 1) pads.Add(ReadyPad.Create(Game.LevelRoot, PadSpot(0.5f), ReadyPad.Kind.Chamber, $"CHAMBER {furthest:00}", 0.5f, furthest));
             }
             Sfx.Play(Sfx.I != null ? Sfx.I.whoosh : null, 0.6f, 1.3f, 0f);
-        }
+        });
 
         void UpdateBaseMonitor()
         {
@@ -538,23 +677,28 @@ namespace UnderPressure
 
             var bs = Game.Bootstrap;
             // retry on the left, the base in the middle, the next chamber on the right (if you passed)
-            if (won)
+            QueuePads(() =>
             {
-                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor - Vector3.right * bs.PadSpacing, ReadyPad.Kind.Retry, $"RETRY  CHAMBER {bs.ChamberNumber:00}"));
-                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor, ReadyPad.Kind.Base, "BACK TO BASE", 0.2f));
-                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor + Vector3.right * bs.PadSpacing, ReadyPad.Kind.Next, $"NEXT:  CHAMBER {bs.ChamberNumber + 1:00}", 0.4f));
-            }
-            else
-            {
-                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor - Vector3.right * bs.PadSpacing * 0.5f, ReadyPad.Kind.Retry, $"RETRY  CHAMBER {bs.ChamberNumber:00}"));
-                pads.Add(ReadyPad.Create(Game.LevelRoot, bs.PadAnchor + Vector3.right * bs.PadSpacing * 0.5f, ReadyPad.Kind.Base, "BACK TO BASE", 0.2f));
-            }
-            Sfx.Play(Sfx.I != null ? Sfx.I.whoosh : null, 0.6f, 1.3f, 0f);
+                if (won)
+                {
+                    pads.Add(ReadyPad.Create(Game.LevelRoot, PadSpot(-1f), ReadyPad.Kind.Retry, $"CHAMBER {bs.ChamberNumber:00}"));
+                    pads.Add(ReadyPad.Create(Game.LevelRoot, PadSpot(0f), ReadyPad.Kind.Base, "BASE", 0.2f));
+                    pads.Add(ReadyPad.Create(Game.LevelRoot, PadSpot(1f), ReadyPad.Kind.Next, $"CHAMBER {bs.ChamberNumber + 1:00}", 0.4f));
+                }
+                else
+                {
+                    pads.Add(ReadyPad.Create(Game.LevelRoot, PadSpot(-0.5f), ReadyPad.Kind.Retry, $"CHAMBER {bs.ChamberNumber:00}"));
+                    pads.Add(ReadyPad.Create(Game.LevelRoot, PadSpot(0.5f), ReadyPad.Kind.Base, "BASE", 0.2f));
+                }
+                AddFloorGrid();
+                Sfx.Play(Sfx.I != null ? Sfx.I.whoosh : null, 0.6f, 1.3f, 0f);
+            });
             intermission = true;
         }
 
         void UpdateTeleporters()
         {
+            UpdatePendingPads();
             if (teleporting) return;
             foreach (var p in pads) p.Occupants = 0;
             int ready = 0, total = 0;
@@ -582,13 +726,13 @@ namespace UnderPressure
 
             if (!allReady && charge <= 0f)
             {
-                hud.SetTimer(title, $"Everyone stand on a teleporter  ·  ready {ready}/{total}", InLobby ? new Color(0.75f, 0.88f, 1f) : Current == State.Won ? Mats.Liquid : Mats.Danger);
+                hud.SetTimer(title, pendingPads != null ? "The teleporters are through the door on the right" : $"Everyone stand on a teleporter  ·  ready {ready}/{total}", InLobby ? new Color(0.75f, 0.88f, 1f) : Current == State.Won ? Mats.Liquid : Mats.Danger);
                 if (!InLobby && Time.unscaledTime - endTime > 2.5f) Game.Monitor?.ShowFooter($"OFF THE CLOCK   ·   LAB FUNDING  ${Cash.Hud(Game.Bootstrap.Bank)}   ·   ready {ready}/{total}");
                 return;
             }
 
             var oddsParts = new System.Collections.Generic.List<string>();
-            foreach (var p in pads) oddsParts.Add($"{p.ShortName} {p.Occupants}");
+            foreach (var p in pads) if (p.Occupants > 0) oddsParts.Add($"{p.ShortName} {p.Occupants}");
             string odds = string.Join(" : ", oddsParts);
             int amps = Mathf.RoundToInt(charge * 9000f);
             hud.SetTimer(allReady ? $"CHARGING  {charge * 100f:0}%" : "DISCHARGING...", $"{amps:N0} AMPS  ·  {odds}", Color.Lerp(Color.white, new Color(0.6f, 0.8f, 1f), charge));

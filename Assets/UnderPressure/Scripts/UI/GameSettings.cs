@@ -23,6 +23,8 @@ namespace UnderPressure
         public static float MasterVolume = 1f;
         public static float MusicVolume = 1f;
         public static float ScreenShake = 1f;
+        /// <summary>Use the between-rounds follow camera during rounds too (instead of the fixed whole-room view).</summary>
+        public static bool FollowCamera;
 
         static bool loaded;
         static List<Vector2Int> resolutions;
@@ -54,6 +56,7 @@ namespace UnderPressure
             MasterVolume = PlayerPrefs.GetFloat("up_master", 1f);
             MusicVolume = PlayerPrefs.GetFloat("up_music", 1f);
             ScreenShake = PlayerPrefs.GetFloat("up_shake", 1f);
+            FollowCamera = PlayerPrefs.GetInt("up_followcam", 0) == 1;
         }
 
         public static void Save()
@@ -66,6 +69,7 @@ namespace UnderPressure
             PlayerPrefs.SetFloat("up_master", MasterVolume);
             PlayerPrefs.SetFloat("up_music", MusicVolume);
             PlayerPrefs.SetFloat("up_shake", ScreenShake);
+            PlayerPrefs.SetInt("up_followcam", FollowCamera ? 1 : 0);
             PlayerPrefs.Save();
         }
 

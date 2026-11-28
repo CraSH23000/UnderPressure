@@ -8,6 +8,12 @@ namespace UnderPressure
     {
         public int Cols { get; private set; }
         public int Rows { get; private set; }
+        /// <summary>
+        /// The bottom row's index. 0 normally; a board that grows downward (the room grows with the players) has
+        /// rows below 0, so every existing cell keeps its index and its place when rows are added at the bottom.
+        /// </summary>
+        public int MinRow { get; private set; }
+        public int MaxRow => MinRow + Rows - 1;
         public float S { get; private set; }
         /// <summary>World position of the centre of cell (0,0).</summary>
         public Vector3 Origin { get; private set; }
@@ -21,20 +27,38 @@ namespace UnderPressure
             public List<PipePiece> newlyDisconnected;
         }
 
-        public void Build(GameConfig cfg, Vector3 origin)
+        public void Build(GameConfig cfg, Vector3 origin) =>
+            Build(cfg, origin, cfg.columns, cfg.rows, 0,
+                new Vector2Int(Mathf.Clamp(cfg.spoutCell.x, 0, cfg.columns - 1), Mathf.Clamp(cfg.spoutCell.y, 0, cfg.rows - 1)));
+
+        /// <summary>A cols x rows board whose rows run from minRow up, with the spout in spoutCell.</summary>
+        public void Build(GameConfig cfg, Vector3 origin, int cols, int rows, int minRow, Vector2Int spoutCell)
         {
-            Cols = cfg.columns; Rows = cfg.rows; S = cfg.tileSize; Origin = origin;
+            Cols = cols; Rows = rows; MinRow = minRow; S = cfg.tileSize; Origin = origin;
             cells = new PipePiece[Cols, Rows];
 
+            BuildTiles();
+
+            var sc = new Vector2Int(Mathf.Clamp(spoutCell.x, 0, Cols - 1), Mathf.Clamp(spoutCell.y, MinRow, MaxRow));
+            Spout = Spout.Create(transform, sc, cfg.spoutDirection, CellCenter(sc), S);
+        }
+
+        Transform tilesRoot;
+
+        /// <summary>The tiles and the hazard-striped border for the current size.</summary>
+        void BuildTiles()
+        {
+            if (tilesRoot != null) Destroy(tilesRoot.gameObject);
             var a = Mats.Lit(Theme.TileA, 0.5f);
             var b = Mats.Lit(Theme.TileB, 0.5f);
             var tiles = Prims.Empty("Tiles", transform, Vector3.zero).transform;
-            Vector3 min = CellCenter(Vector2Int.zero) - new Vector3(S, 0, S) * 0.5f;
+            tilesRoot = tiles;
+            Vector3 min = Min;
             float w = Cols * S, d = Rows * S;
             // dark base so the gaps between tiles read as panel seams
             Prims.Make(PrimitiveType.Cube, tiles, min + new Vector3(w * 0.5f, -0.005f, d * 0.5f), new Vector3(w, 0.02f, d), Mats.Lit(Theme.BoardBase, 0.3f), null, "BoardBase");
             for (int x = 0; x < Cols; x++)
-            for (int y = 0; y < Rows; y++)
+            for (int y = MinRow; y <= MaxRow; y++)
                 Prims.Make(PrimitiveType.Cube, tiles, CellCenter(new Vector2Int(x, y)),
                     new Vector3(S * 0.95f, 0.04f, S * 0.95f), ((x + y) & 1) == 0 ? a : b, null, $"Tile_{x}_{y}");
 
@@ -42,23 +66,40 @@ namespace UnderPressure
             var black = Mats.Lit(Theme.Ink, 0.3f);
             var yellow = Mats.Lit(Theme.Hazard, 0.4f);
             const float seg = 0.4f, bw = 0.22f;
-            int i = 0;
-            for (float x = -bw; x < w + bw - 0.01f; x += seg, i++)
+            // stripes stretch a touch so each run ends exactly at its corner (the top/bottom runs cover the corners)
+            float runX = w + bw * 2f, runZ = d;
+            int nx = Mathf.Max(1, Mathf.RoundToInt(runX / seg)), nz = Mathf.Max(1, Mathf.RoundToInt(runZ / seg));
+            float sx = runX / nx, sz = runZ / nz;
+            for (int i = 0; i < nx; i++)
             {
                 var m = (i & 1) == 0 ? black : yellow;
-                Prims.Make(PrimitiveType.Cube, tiles, min + new Vector3(x + seg * 0.5f, 0.01f, -bw * 0.5f), new Vector3(seg, 0.03f, bw), m, null, "Border");
-                Prims.Make(PrimitiveType.Cube, tiles, min + new Vector3(x + seg * 0.5f, 0.01f, d + bw * 0.5f), new Vector3(seg, 0.03f, bw), m, null, "Border");
+                float x = -bw + (i + 0.5f) * sx;
+                Prims.Make(PrimitiveType.Cube, tiles, min + new Vector3(x, 0.01f, -bw * 0.5f), new Vector3(sx, 0.03f, bw), m, null, "Border");
+                Prims.Make(PrimitiveType.Cube, tiles, min + new Vector3(x, 0.01f, d + bw * 0.5f), new Vector3(sx, 0.03f, bw), m, null, "Border");
             }
-            i = 0;
-            for (float z = 0f; z < d - 0.01f; z += seg, i++)
+            for (int i = 0; i < nz; i++)
             {
                 var m = (i & 1) == 0 ? black : yellow;
-                Prims.Make(PrimitiveType.Cube, tiles, min + new Vector3(-bw * 0.5f, 0.01f, z + seg * 0.5f), new Vector3(bw, 0.03f, seg), m, null, "Border");
-                Prims.Make(PrimitiveType.Cube, tiles, min + new Vector3(w + bw * 0.5f, 0.01f, z + seg * 0.5f), new Vector3(bw, 0.03f, seg), m, null, "Border");
+                float z = (i + 0.5f) * sz;
+                Prims.Make(PrimitiveType.Cube, tiles, min + new Vector3(-bw * 0.5f, 0.01f, z), new Vector3(bw, 0.03f, sz), m, null, "Border");
+                Prims.Make(PrimitiveType.Cube, tiles, min + new Vector3(w + bw * 0.5f, 0.01f, z), new Vector3(bw, 0.03f, sz), m, null, "Border");
             }
+        }
 
-            var sc = new Vector2Int(Mathf.Clamp(cfg.spoutCell.x, 0, Cols - 1), Mathf.Clamp(cfg.spoutCell.y, 0, Rows - 1));
-            Spout = Spout.Create(transform, sc, cfg.spoutDirection, CellCenter(sc), S);
+        /// <summary>
+        /// The room grew: the board becomes cols x rows with its bottom row at minRow (more columns on the right, more
+        /// rows below). Every placed piece, the spout and every cell index stay exactly where they are.
+        /// </summary>
+        public void Grow(int cols, int rows, int minRow)
+        {
+            if (cols < Cols || minRow > MinRow || minRow + rows - 1 < MaxRow) { Debug.LogWarning("[UnderPressure] GridBoard.Grow can't shrink the board."); return; }
+            var grown = new PipePiece[cols, rows];
+            for (int x = 0; x < Cols; x++)
+            for (int y = 0; y < Rows; y++)
+                grown[x, y + (MinRow - minRow)] = cells[x, y];
+            cells = grown;
+            Cols = cols; Rows = rows; MinRow = minRow;
+            BuildTiles();
         }
 
         // ------------------------------------------------------------------ coordinates
@@ -68,27 +109,27 @@ namespace UnderPressure
         public Vector2Int WorldToCell(Vector3 p) =>
             new Vector2Int(Mathf.RoundToInt((p.x - Origin.x) / S), Mathf.RoundToInt((p.z - Origin.z) / S));
 
-        public bool InBounds(Vector2Int c) => c.x >= 0 && c.y >= 0 && c.x < Cols && c.y < Rows;
+        public bool InBounds(Vector2Int c) => c.x >= 0 && c.y >= MinRow && c.x < Cols && c.y <= MaxRow;
 
-        public Vector3 Min => Origin - new Vector3(S, 0, S) * 0.5f;
-        public Vector3 Max => Origin + new Vector3((Cols - 0.5f) * S, 0, (Rows - 0.5f) * S);
+        public Vector3 Min => Origin + new Vector3(-0.5f * S, 0, (MinRow - 0.5f) * S);
+        public Vector3 Max => Origin + new Vector3((Cols - 0.5f) * S, 0, (MaxRow + 0.5f) * S);
 
         // ------------------------------------------------------------------ occupancy
 
-        public PipePiece Get(Vector2Int c) => InBounds(c) ? cells[c.x, c.y] : null;
+        public PipePiece Get(Vector2Int c) => InBounds(c) ? cells[c.x, c.y - MinRow] : null;
         public bool IsSpout(Vector2Int c) => Spout != null && c == Spout.Cell;
-        public bool IsFree(Vector2Int c) => InBounds(c) && !IsSpout(c) && cells[c.x, c.y] == null;
+        public bool IsFree(Vector2Int c) => InBounds(c) && !IsSpout(c) && cells[c.x, c.y - MinRow] == null;
 
         public void Place(PipePiece p, Vector2Int c)
         {
-            cells[c.x, c.y] = p;
+            cells[c.x, c.y - MinRow] = p;
             p.SetCell(c);
         }
 
         public PipePiece Remove(Vector2Int c)
         {
             var p = Get(c);
-            if (p != null) cells[c.x, c.y] = null;
+            if (p != null) cells[c.x, c.y - MinRow] = null;
             return p;
         }
 

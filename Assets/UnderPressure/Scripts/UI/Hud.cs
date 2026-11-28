@@ -15,8 +15,8 @@ namespace UnderPressure
         RectTransform distanceFill, timerRect;
         HoloMoney holoMoney;
         Image distanceFillImg;
-        readonly Image[] rings = new Image[JoinManager.MaxPlayers];
-        readonly RectTransform[] ringRects = new RectTransform[JoinManager.MaxPlayers];
+        readonly Image[] rings = new Image[JoinManager.Capacity];
+        readonly RectTransform[] ringRects = new RectTransform[JoinManager.Capacity];
         Text roster;
         GameObject distanceRoot;
         bool joinOpen;
@@ -84,7 +84,8 @@ namespace UnderPressure
 
             // Unscrew progress rings (one per player, follows them)
             var ringSprite = Mats.MakeSprite(Mats.RingTexture);
-            for (int i = 0; i < JoinManager.MaxPlayers; i++)
+            var ringColors = JoinManager.PlayerColors;
+            for (int i = 0; i < JoinManager.Capacity; i++)
             {
                 var rr = Rect("Ring" + i, root, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(84, 84));
                 var bg = rr.gameObject.AddComponent<Image>();
@@ -97,7 +98,7 @@ namespace UnderPressure
                 ring.fillMethod = Image.FillMethod.Radial360;
                 ring.fillOrigin = (int)Image.Origin360.Top;
                 ring.fillClockwise = true;
-                ring.color = JoinManager.PlayerColors[i];
+                ring.color = ringColors[i];
                 rr.gameObject.SetActive(false);
                 rings[i] = ring;
                 ringRects[i] = rr;
@@ -278,7 +279,7 @@ namespace UnderPressure
             public int frame = -1;
             public float punch, punchDir;
         }
-        readonly ClosetPanel[] closetPanels = new ClosetPanel[JoinManager.MaxPlayers];
+        readonly ClosetPanel[] closetPanels = new ClosetPanel[JoinManager.Capacity];
         const int ClosetMaxRows = 9; // a base locker has every row
 
         ClosetPanel GetClosetPanel(int player)
@@ -430,11 +431,25 @@ namespace UnderPressure
         void UpdateClosetPanels()
         {
             UpdateConfetti();
+            int open = 0;
             foreach (var cp in closetPanels)
             {
                 if (cp == null) continue;
                 if (cp.frame != Time.frameCount && cp.root.gameObject.activeSelf) cp.root.gameObject.SetActive(false);
                 cp.punch = Mathf.MoveTowards(cp.punch, 0f, Time.unscaledDeltaTime * 5f);
+                if (cp.root.gameObject.activeSelf) open++;
+            }
+            if (JoinManager.MaxPlayers <= 4) return; // four fixed columns, one per player
+            // up to 8 players: spread across the bottom whoever is in a locker right now (in player order), and shrink
+            // the panels if more than four are open at once
+            int slots = Mathf.Max(4, open), k = 0;
+            float scale = Mathf.Min(1f, 4f / Mathf.Max(1, open));
+            foreach (var cp in closetPanels)
+            {
+                if (cp == null || !cp.root.gameObject.activeSelf) continue;
+                float x = 0.5f + (k++ - (open - 1) * 0.5f) / slots;
+                cp.root.anchorMin = cp.root.anchorMax = new Vector2(x, 0f);
+                cp.root.localScale = Vector3.one * scale;
             }
         }
 

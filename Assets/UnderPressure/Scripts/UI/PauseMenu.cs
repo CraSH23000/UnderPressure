@@ -207,7 +207,7 @@ namespace UnderPressure
         void BuildSettings()
         {
             title.text = "SETTINGS";
-            box.sizeDelta = new Vector2(1060, 920);
+            box.sizeDelta = new Vector2(1060, 1002);
             var res = GameSettings.Resolutions();
             AddSetting("Display Mode", () => GameSettings.DisplayModes[GameSettings.DisplayMode],
                 d => { GameSettings.DisplayMode = Wrap(GameSettings.DisplayMode + d, GameSettings.DisplayModes.Length); GameSettings.ApplyDisplay(); });
@@ -227,6 +227,7 @@ namespace UnderPressure
             AddSlider("Master Volume", () => GameSettings.MasterVolume, v => GameSettings.MasterVolume = v, 1f, 0.1f);
             AddSlider("Music Volume", () => GameSettings.MusicVolume, v => GameSettings.MusicVolume = v, 1f, 0.1f);
             AddSlider("Screen Shake", () => GameSettings.ScreenShake, v => GameSettings.ScreenShake = v, 1.5f, 0.25f);
+            AddSetting("Camera", () => GameSettings.FollowCamera ? "Follow" : "Fixed", d => GameSettings.FollowCamera = !GameSettings.FollowCamera);
             AddItem("Back", () => Show(Page.Main));
         }
 

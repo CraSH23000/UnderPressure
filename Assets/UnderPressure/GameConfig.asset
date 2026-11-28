@@ -12,12 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 143df498cc415934db887a2eac07eeb3, type: 3}
   m_Name: GameConfig
   m_EditorClassIdentifier: Assembly-CSharp::UnderPressure.GameConfig
-  columns: 8
-  rows: 8
+  columns: 6
+  rows: 6
   tileSize: 1.6
   spoutCell: {x: 1, y: 3}
   spoutDirection: 1
-  laneWidth: 2.6
+  laneWidth: 1.2
+  roomGrowsWithPlayers: 1
+  growBaseSize: 6
   goalDistance: 8
   countdownSeconds: 32
   secondsPerPiece: 4
@@ -124,6 +126,7 @@ MonoBehaviour:
     glow: {r: 0.25, g: 0.6, b: 1.3, a: 1}
     purifiesTo: FILTERED WATER
     concentratesTo: DIRTY WATER
+    spillGrime: 0
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -135,6 +138,7 @@ MonoBehaviour:
     glow: {r: 0.22, g: 0.32, b: 0.18, a: 1}
     purifiesTo: WATER
     concentratesTo: SLIME
+    spillGrime: 0.03
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -146,6 +150,7 @@ MonoBehaviour:
     glow: {r: 0.3, g: 0.95, b: 0.2, a: 1}
     purifiesTo: DIRTY WATER
     concentratesTo: TOXIC SLIME
+    spillGrime: 0.05
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -157,6 +162,7 @@ MonoBehaviour:
     glow: {r: 0.3, g: 2.2, b: 0.7, a: 1}
     purifiesTo: SLIME
     concentratesTo: TOXIC SLIME+
+    spillGrime: 0.08
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -168,6 +174,7 @@ MonoBehaviour:
     glow: {r: 1.8, g: 3.2, b: 0.3, a: 1}
     purifiesTo: FILTERED WATER
     concentratesTo: IRRADIATED+
+    spillGrime: 0.1
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -179,6 +186,7 @@ MonoBehaviour:
     glow: {r: 0.55, g: 0.15, b: 1.1, a: 1}
     purifiesTo: FILTERED WATER
     concentratesTo: VOID+
+    spillGrime: 0.12
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -190,6 +198,7 @@ MonoBehaviour:
     glow: {r: 1, g: 1, b: 1, a: 1}
     purifiesTo: PROTOMATTER
     concentratesTo: ANTIMATTER
+    spillGrime: 0.12
     pattern: 1
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -201,6 +210,7 @@ MonoBehaviour:
     glow: {r: 2.4, g: 1.9, b: 0.9, a: 1}
     purifiesTo: PROTOMATTER+
     concentratesTo: ???
+    spillGrime: -0.1
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -212,6 +222,7 @@ MonoBehaviour:
     glow: {r: 1.9, g: 0.15, b: 1.5, a: 1}
     purifiesTo: ???
     concentratesTo: ANTIMATTER+
+    spillGrime: 0.15
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -223,6 +234,7 @@ MonoBehaviour:
     glow: {r: 0.52, g: 0.74, b: 0.9, a: 1}
     purifiesTo: PURE WATER
     concentratesTo: WATER
+    spillGrime: -0.1
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -234,6 +246,7 @@ MonoBehaviour:
     glow: {r: 1, g: 1.26, b: 1.4, a: 1}
     purifiesTo: DEIONIZED WATER
     concentratesTo: FILTERED WATER
+    spillGrime: -0.2
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -245,6 +258,7 @@ MonoBehaviour:
     glow: {r: 1.62, g: 1.84, b: 1.9, a: 1}
     purifiesTo: ULTRAPURE WATER
     concentratesTo: PURE WATER
+    spillGrime: -0.4
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}
@@ -256,6 +270,7 @@ MonoBehaviour:
     glow: {r: 2.2, g: 2.4, b: 2.5, a: 1}
     purifiesTo: ULTRAPURE WATER+
     concentratesTo: DEIONIZED WATER
+    spillGrime: -0.6
     pattern: 0
     color2: {r: 0, g: 0, b: 0, a: 1}
     glow2: {r: 0, g: 0, b: 0, a: 1}

@@ -21,6 +21,8 @@ namespace UnderPressure
         public string purifiesTo = "";
         [Tooltip("What a filter's other outlet turns this into: another entry's name. End it in '+' for an endless chain: \"TOXIC SLIME+\" gives TOXIC SLIME+, ++, +++, +4... Blank = stays as it is.")]
         public string concentratesTo = "";
+        [Tooltip("How much spilling this changes the lab's grime: negative cleans (ULTRAPURE WATER -0.6 = three chambers' worth back), positive dirties. Each '+' step adds half again.")]
+        public float spillGrime = 0f;
 
         [Header("Pattern (optional)")]
         [Tooltip("Solid = one flat color. Anything else swirls 'color' with 'color2' (pipe fill, the stream's front, puddles, the spout slime).")]
@@ -50,7 +52,11 @@ namespace UnderPressure
         public Vector2Int spoutCell = new Vector2Int(1, 3);
         public Dir spoutDirection = Dir.E;
         [Tooltip("Walkable gap between the belt and the board.")]
-        public float laneWidth = 2.6f;
+        public float laneWidth = 1.2f;
+        [Tooltip("EXPERIMENTAL. The room grows with the players: the board is 'growBaseSize' square for one player and one column and one row bigger for each player after that (6x6 solo, 9x9 for four, 13x13 for eight). It grows to the right and down, so the top-left (spout, pit, lever, lockers) stays put, and 'spoutCell' counts from the top-left. One locker per player. Up to 8 players can join; each join grows the room live (mid-flow too) and builds their locker. Off = the fixed 'columns' x 'rows' board and up to 4 players.")]
+        public bool roomGrowsWithPlayers = false;
+        [Tooltip("With 'roomGrowsWithPlayers': the board's size (columns and rows) for one player.")]
+        public int growBaseSize = 6;
 
         [Header("Round & flow")]
         [Tooltip("Pipes the liquid must fill (not counting the spout) for the level to count as complete.")]

@@ -25,6 +25,18 @@ namespace UnderPressure
         public static LiquidGrade Source => new LiquidGrade { water = Progress.LiquidIsWater, level = 0, liquidId = Mats.LiquidId };
 
         public bool Plain => level == 0;
+
+        /// <summary>How much spilling this stream changes the lab's grime (negative cleans). Its entry's spillGrime,
+        /// half again per '+' step; generic water cleans a little more per filter pass.</summary>
+        public float SpillGrime
+        {
+            get
+            {
+                var d = Def;
+                if (d != null) return d.spillGrime * (1f + 0.5f * Mathf.Max(0, extra));
+                return water ? -0.1f * level : 0.05f * level;
+            }
+        }
         public bool Lethal => level >= Max;
 
         static LiquidType[] List => Game.Config != null ? Game.Config.liquids : null;

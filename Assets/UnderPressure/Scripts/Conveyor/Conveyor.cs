@@ -70,12 +70,33 @@ namespace UnderPressure
             cfg = config;
             speed = cfg.beltSpeed;
             spacing = cfg.beltSpacing;
-            pts = path;
             PitCenter = pitCenter;
+            SetPath(path);
+            BuildTrack();
+            BuildPit();
+
+            // Pre-fill only the start of the belt, so nothing is about to fall in the pit when the round begins.
+            float visibleStart = Vector3.Distance(pts[0], pts[1]) > 6f ? 4.5f : 0f;
+            float prefillEnd = Mathf.Lerp(visibleStart, total, Mathf.Clamp01(cfg.beltPrefill));
+            for (float s = prefillEnd; s > visibleStart; s -= spacing) Spawn(s, false);
+        }
+
+        static Vector3 side_(Vector3 dir) => Vector3.Cross(Vector3.up, dir);
+
+        Transform track; // the bed, rails, chevrons and slats (re-laid when the room grows); the pit stays
+
+        void SetPath(Vector3[] path)
+        {
+            pts = path;
             cum = new float[pts.Length];
             for (int i = 1; i < pts.Length; i++) cum[i] = cum[i - 1] + Vector3.Distance(pts[i - 1], pts[i]);
             total = cum[pts.Length - 1];
+        }
 
+        void BuildTrack()
+        {
+            track = new GameObject("Track").transform;
+            track.SetParent(transform, false);
             var frame = Mats.Lit(Color.Lerp(Theme.Wall, Theme.WallTrim, 0.15f), 0.7f, 0.2f);
             var beltMat = Mats.Lit(Theme.Ink, 0.25f);
             var slatMat = Mats.Lit(Color.Lerp(Theme.Ink, Theme.WallTrim, 0.6f), 0.35f, 0.3f);
@@ -91,10 +112,10 @@ namespace UnderPressure
                 float len = Vector3.Distance(a, b) + (i > 0 ? HalfWidth : 0f) + (i < pts.Length - 2 ? HalfWidth : 0f);
                 Vector3 mid = (a + b) * 0.5f + dir * (((i < pts.Length - 2) ? HalfWidth : 0f) - (i > 0 ? HalfWidth : 0f)) * 0.5f;
                 var rot = Quaternion.LookRotation(dir);
-                Prims.Make(PrimitiveType.Cube, transform, new Vector3(mid.x, 0.002f, mid.z), new Vector3(w, 0.02f, len), beltMat, rot, "BeltBed");
+                Prims.Make(PrimitiveType.Cube, track, new Vector3(mid.x, 0.002f, mid.z), new Vector3(w, 0.02f, len), beltMat, rot, "BeltBed");
                 Vector3 side = Vector3.Cross(Vector3.up, dir);
                 for (int sgn = -1; sgn <= 1; sgn += 2)
-                    Prims.Make(PrimitiveType.Cube, transform, new Vector3(mid.x, 0.006f, mid.z) + side * sgn * (HalfWidth + 0.06f),
+                    Prims.Make(PrimitiveType.Cube, track, new Vector3(mid.x, 0.006f, mid.z) + side * sgn * (HalfWidth + 0.06f),
                         new Vector3(0.12f, 0.03f, len + 0.12f), frame, rot, "Edge");
                 // orange chevrons along the inner rail show the direction of travel
                 Vector3 inner = Vector3.Cross(Vector3.up, dir); // belt runs clockwise, so the board is on this side
@@ -104,8 +125,8 @@ namespace UnderPressure
                     for (int sgn = -1; sgn <= 1; sgn += 2)
                     {
                         Vector3 p = a + dir * d + inner * sgn * (HalfWidth - 0.2f) + Vector3.up * 0.016f;
-                        Prims.Make(PrimitiveType.Cube, transform, p - side_(dir) * 0.08f, new Vector3(0.06f, 0.01f, 0.3f), stripe, rot * Quaternion.Euler(0, 35f, 0), "Chevron");
-                        Prims.Make(PrimitiveType.Cube, transform, p + side_(dir) * 0.08f, new Vector3(0.06f, 0.01f, 0.3f), stripe, rot * Quaternion.Euler(0, -35f, 0), "Chevron");
+                        Prims.Make(PrimitiveType.Cube, track, p - side_(dir) * 0.08f, new Vector3(0.06f, 0.01f, 0.3f), stripe, rot * Quaternion.Euler(0, 35f, 0), "Chevron");
+                        Prims.Make(PrimitiveType.Cube, track, p + side_(dir) * 0.08f, new Vector3(0.06f, 0.01f, 0.3f), stripe, rot * Quaternion.Euler(0, -35f, 0), "Chevron");
                     }
                 }
             }
@@ -114,19 +135,34 @@ namespace UnderPressure
             int count = Mathf.CeilToInt(total / SlatPitch);
             for (int i = 0; i < count; i++)
             {
-                var t = Prims.Make(PrimitiveType.Cube, transform, Vector3.zero, new Vector3(w - 0.1f, 0.01f, SlatPitch * 0.25f), slatMat, null, "Slat").transform;
+                var t = Prims.Make(PrimitiveType.Cube, track, Vector3.zero, new Vector3(w - 0.1f, 0.01f, SlatPitch * 0.25f), slatMat, null, "Slat").transform;
                 slats.Add((t, i * SlatPitch));
             }
-
-            BuildPit();
-
-            // Pre-fill only the start of the belt, so nothing is about to fall in the pit when the round begins.
-            float visibleStart = Vector3.Distance(pts[0], pts[1]) > 6f ? 4.5f : 0f;
-            float prefillEnd = Mathf.Lerp(visibleStart, total, Mathf.Clamp01(cfg.beltPrefill));
-            for (float s = prefillEnd; s > visibleStart; s -= spacing) Spawn(s, false);
         }
 
-        static Vector3 side_(Vector3 dir) => Vector3.Cross(Vector3.up, dir);
+        /// <summary>
+        /// The room grew: lay the belt along a new path (same corners, same order, the end at the pit unchanged).
+        /// Every piece riding it stays on its own run and is re-projected onto that run's new line; the belt's easing
+        /// glides it over, and its rotation still matches the run, so nothing turns the wrong way.
+        /// </summary>
+        public void Repath(Vector3[] path)
+        {
+            SetPath(path);
+            if (track != null) Destroy(track.gameObject);
+            slats.Clear();
+            BuildTrack();
+            foreach (var it in items)
+            {
+                if (it.piece == null) continue;
+                int seg = Mathf.Clamp(it.seg, 0, pts.Length - 2);
+                Vector3 a = pts[seg], ab = pts[seg + 1] - a;
+                float len = ab.magnitude;
+                Vector3 ap = it.piece.transform.position - a; ap.y = 0f;
+                float t = Mathf.Clamp(Vector3.Dot(ap, ab / Mathf.Max(0.0001f, len)), 0f, Mathf.Max(0f, len - 0.01f));
+                it.s = cum[seg] + t;
+                it.seg = seg;
+            }
+        }
 
         void BuildPit()
         {
@@ -136,26 +172,76 @@ namespace UnderPressure
             float size = HalfWidth * 2f + 0.3f;
             var c = PitCenter;
             Prims.Make(PrimitiveType.Cube, transform, new Vector3(c.x, 0.012f, c.z), new Vector3(size, 0.02f, size), ink, null, "PitHole");
-            // inner lip that fakes depth
-            Prims.Make(PrimitiveType.Cube, transform, new Vector3(c.x, 0.02f, c.z + size * 0.5f - 0.1f), new Vector3(size, 0.03f, 0.2f), Mats.Lit(Theme.WallTrim, 0.3f), null, "PitLip");
+            // inner lips that fake depth, just inside the north and south caution tape
+            var lipMat = Mats.Lit(Theme.WallTrim, 0.3f);
+            Prims.Make(PrimitiveType.Cube, transform, new Vector3(c.x, 0.02f, c.z + size * 0.5f - 0.1f), new Vector3(size, 0.03f, 0.2f), lipMat, null, "PitLip");
+            Prims.Make(PrimitiveType.Cube, transform, new Vector3(c.x, 0.02f, c.z - size * 0.5f + 0.1f), new Vector3(size, 0.03f, 0.2f), lipMat, null, "PitLip");
             int i = 0;
             float h = size * 0.5f + 0.12f;
             for (float d = -h; d < h - 0.01f; d += 0.3f, i++)
             {
                 var m = (i & 1) == 0 ? black : yellow;
                 Prims.Make(PrimitiveType.Cube, transform, new Vector3(c.x + d + 0.15f, 0.02f, c.z - h), new Vector3(0.3f, 0.04f, 0.24f), m);
+                Prims.Make(PrimitiveType.Cube, transform, new Vector3(c.x + d + 0.15f, 0.02f, c.z + h), new Vector3(0.3f, 0.04f, 0.24f), m);
                 Prims.Make(PrimitiveType.Cube, transform, new Vector3(c.x - h, 0.02f, c.z + d + 0.15f), new Vector3(0.24f, 0.04f, 0.3f), m);
                 Prims.Make(PrimitiveType.Cube, transform, new Vector3(c.x + h, 0.02f, c.z + d + 0.15f), new Vector3(0.24f, 0.04f, 0.3f), m);
             }
             // a sullen red glow from somewhere down there
             pitGlowMat = new Material(Mats.Lit(new Color(0.3f, 0.02f, 0.02f), 0.2f, 0f, new Color(0.6f, 0.03f, 0.02f)));
-            pitGlow = Prims.Make(PrimitiveType.Cube, transform, new Vector3(c.x, 0.015f, c.z), new Vector3(size * 0.55f, 0.02f, size * 0.55f), pitGlowMat, null, "PitGlow").transform;
+            pitGlow = Prims.Make(PrimitiveType.Cube, transform, new Vector3(c.x, 0.015f, c.z), new Vector3(size * 0.8f, 0.02f, size * 0.8f), pitGlowMat, null, "PitGlow").transform;
             // invisible wall so loose pieces don't tumble in (critters pass through it, and can fall in)
             var guard = new GameObject("PitGuard");
             guard.layer = Layers.PlacedWalkable;
             guard.transform.SetParent(transform, false);
             guard.transform.position = new Vector3(c.x, 0.75f, c.z);
             guard.AddComponent<BoxCollider>().size = new Vector3(size, 1.5f, size);
+            BuildSafetyCage(c);
+        }
+
+        /// <summary>
+        /// Railings on the pit's west, north and east edges (on the hazard stripes) so nobody strolls in by accident.
+        /// The south side, where the belt feeds in, stays open: ride the belt (or chase a piece) and in you go.
+        /// </summary>
+        void BuildSafetyCage(Vector3 c)
+        {
+            var rail = Mats.Lit(Theme.Hazard, 0.5f, 0.6f);
+            var post = Mats.Lit(Theme.Ink, 0.4f, 0.6f);
+            var cage = new GameObject("PitCage").transform;
+            cage.SetParent(transform, false);
+            const float railH = 0.85f, postR = 0.05f, railR = 0.035f;
+            // corners, going round W -> N -> E; the open south side is the gap between the first and last.
+            // The rails hug the inside of the hole's edge (you only fall in well past it), which leaves room to walk
+            // between the pit and the belt lever, and keeps the north side off the top run of the belt.
+            float h = PitHalfSize - 0.08f;
+            var corners = new[]
+            {
+                new Vector3(c.x - h, 0f, c.z - h),
+                new Vector3(c.x - h, 0f, c.z + h),
+                new Vector3(c.x + h, 0f, c.z + h),
+                new Vector3(c.x + h, 0f, c.z - h),
+            };
+            for (int s = 0; s < 3; s++)
+            {
+                Vector3 a = corners[s], b = corners[s + 1];
+                // posts every ~0.9 along the side
+                int n = Mathf.Max(1, Mathf.RoundToInt(Vector3.Distance(a, b) / 0.9f));
+                for (int k = s == 0 ? 0 : 1; k <= n; k++)
+                {
+                    Vector3 p = Vector3.Lerp(a, b, k / (float)n);
+                    Prims.Segment(cage, p, p + Vector3.up * (railH + 0.04f), postR, post);
+                    Prims.Make(PrimitiveType.Sphere, cage, p + Vector3.up * (railH + 0.04f), Vector3.one * postR * 2.6f, post, null, "Cap");
+                }
+                Prims.Segment(cage, a + Vector3.up * railH, b + Vector3.up * railH, railR, rail);        // top rail
+                Prims.Segment(cage, a + Vector3.up * railH * 0.5f, b + Vector3.up * railH * 0.5f, railR, rail); // knee rail
+                // the actual barrier: a thin wall the walking (and vaulting) player bumps into
+                var wall = new GameObject("CageWall");
+                wall.layer = Layers.Default;
+                wall.transform.SetParent(cage, false);
+                Vector3 d = b - a;
+                wall.transform.position = (a + b) * 0.5f + Vector3.up * 0.9f;
+                wall.transform.rotation = Quaternion.LookRotation(d.normalized, Vector3.up);
+                wall.AddComponent<BoxCollider>().size = new Vector3(0.12f, 1.8f, d.magnitude + 0.12f);
+            }
         }
 
         // ------------------------------------------------------------------ path

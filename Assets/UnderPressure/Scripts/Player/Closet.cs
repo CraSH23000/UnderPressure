@@ -370,7 +370,7 @@ namespace UnderPressure
                 swatch = p.Color;
                 return slot != null ? slot.ColorName : "-";
             }
-            var l = p.Look;
+            var l = ShownLook(p);
             swatch = part == Part.Color ? l.BodyColor : Color.clear;
             string name = CritterLook.Names(part)[l.Get(part)];
             return name; // (new items get a NEW! sticker on the panel instead)
@@ -378,7 +378,11 @@ namespace UnderPressure
 
         /// <summary>Row has something new in it / the item showing right now is the new one.</summary>
         public bool RowNew(PlayerController p, Part part) => part != Part.Player && Progress.AnyNew(p.Index, part);
-        public bool ValueNew(PlayerController p, Part part) => part != Part.Player && Progress.IsNew(p.Index, part, p.Look.Get(part));
+        public bool ValueNew(PlayerController p, Part part) => part != Part.Player && Progress.IsNew(p.Index, part, ShownLook(p).Get(part));
+
+        /// <summary>The look the menu shows: a body swap still in the tank counts as already picked, so you can
+        /// keep cycling past it without waiting for the show.</summary>
+        CritterLook ShownLook(PlayerController p) => pendingRebuild == p && pendingLook != null ? pendingLook : p.Look;
 
         static int Wrap(int v, int n) => ((v % n) + n) % n;
 
@@ -398,10 +402,13 @@ namespace UnderPressure
         public void Change(PlayerController p, Part part, int dir)
         {
             if (part == Part.Player) { ChangePlayerColor(p, dir); return; }
+            int before = ShownLook(p).Get(part);
+            int next = Step(p.Index, part, before, dir);
+            if (next == before) { Sfx.Play(Sfx.I != null ? Sfx.I.nope : null, 0.4f, 1.2f); return; } // nothing else unlocked yet
+            bool queued = pendingRebuild == p;
+            if (queued) pendingLook.Set(part, next); // keep the queued body swap in step with this change too
             var l = p.Look.Clone();
-            int before = l.Get(part);
-            l.Set(part, Step(p.Index, part, before, dir));
-            if (l.Get(part) == before) { Sfx.Play(Sfx.I != null ? Sfx.I.nope : null, 0.4f, 1.2f); return; } // nothing else unlocked yet
+            l.Set(part, next);
             Vector3 mid = Inside + Vector3.up * 0.6f;
             int row = part == Part.Hat ? 0 : part == Part.Feet ? 2 : 1;
             // a locker does whichever closet's show fits the row
@@ -410,8 +417,10 @@ namespace UnderPressure
             switch (fx)
             {
                 case ClosetKind.BioReactor:
-                    // flood the tube, swap the critter at the top of the fill, then drain
-                    pendingRebuild = p; pendingLook = l;
+                    // flood the tube, swap the critter at the top of the fill, then drain.
+                    // Picking again mid-show restarts the flood from the bottom with the new pick.
+                    if (!queued) { pendingRebuild = p; pendingLook = l; }
+                    else fill = 0f;
                     fillTarget = 1f;
                     tubeTarget = 0f; // (a locker's tube waits under the floor until now)
                     var lc = Mats.Liquid; lc.a = 0.6f;
@@ -484,11 +493,11 @@ namespace UnderPressure
 
             if (HasTube && tube != null)
             {
-                tubeY = Mathf.MoveTowards(tubeY, tubeTarget, dt * 3.2f);
+                tubeY = Mathf.MoveTowards(tubeY, tubeTarget, dt * 6f);
                 tube.localPosition = new Vector3(0, tubeY, Depth * 0.5f);
                 bool tubeUp = tubeY > -0.05f;
                 if (tubeUp || fillTarget < fill) // only flood once the glass is up
-                    fill = Mathf.MoveTowards(fill, fillTarget, dt * (fillTarget > fill ? 3f : 1.6f));
+                    fill = Mathf.MoveTowards(fill, fillTarget, dt * (fillTarget > fill ? 6f : 3.5f));
                 // a locker puts its tube away again once it has drained
                 if (Kind == ClosetKind.Locker && pendingRebuild == null && fillTarget <= 0f && fill <= 0.001f && tubeTarget > -1f) tubeTarget = -1.5f;
                 liquid.localScale = new Vector3(1f, Mathf.Max(0.0001f, fill * 1.35f), 1f);

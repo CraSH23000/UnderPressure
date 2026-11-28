@@ -53,9 +53,10 @@ An assist-style player for anyone who'd rather not (or can't) use a gamepad or k
 - `enableGhost` turns it off (Ghost section of GameConfig).
 
 ### The board and the belt
+- **Floor:** every floor tile in the room is walkable: the lanes between the board and the belt, the belt itself, and the floor outside the belt loop up to the side walls and the front edge. `laneWidth` (1.2) is the gap between the board and the belt on all four sides; the room grows with the board's `columns` and `rows`.
 - **Belt:** loops around the outside of the board, level with the floor. It comes out of the left wall at the top-left and turns clockwise at each corner (pieces rotate with it). Walk onto it to grab pieces, ride it to move faster, or drop a piece on it to send it back around. Anything still riding it at the end drops into the pit just below the entrance and costs `wastedPiecePenalty` ($5). Only the first `beltPrefill` (30%) is pre-filled at the start.
 - **Spawn bag:** pieces are dealt from a shuffled bag (`spawnBag`: straights, corners, crosses), so you never go long without a useful piece.
-- **Belt lever:** a floor lever in the walkway corner by the belt entrance. Face it, press Use to grab it, rotate to step through `beltSpeedSteps` (0.25×–16× of `beltSpeed`). The arm swings left (slow, blue) to right (fast, red) as seen from the camera, and a lamp row shows the step, red above 1×. Use, jump or moving lets go. The lever resets to `beltSpeedDefault` at the end of every round. A faster belt brings more pieces into play, and more of them risk ending in the pit.
+- **Belt lever:** a floor lever up against the top belt, just right of the pit (placed from the pit, `GameBootstrap.LeverFromPit`, with room to walk between them). Face it, press Use to grab it, rotate to step through `beltSpeedSteps` (0.25×–16× of `beltSpeed`). The arm swings left (slow, blue) to right (fast, red) as seen from the camera, and a lamp row shows the step, red above 1×. Use, jump or moving lets go. The lever resets to `beltSpeedDefault` at the end of every round. A faster belt brings more pieces into play, and more of them risk ending in the pit.
 - **The belt waits** until someone joins. Between chambers and at the base it idles at `freePlayBeltSpeed` (0.35×); the lever still speeds that up or slows it down.
 
 ### Carrying and placing
@@ -77,7 +78,7 @@ An assist-style player for anyone who'd rather not (or can't) use a gamepad or k
 - **Your body matters:** placed pipes block walking, but only the tube and its flanges; the bare base plate around it is free, so you can cut across the inside of a corner.
 - **Jump** only when you need to go over a tube; it picks the tube right in front of you, even in your own tile. One pipe with a free tile behind it: you **vault** over (`vaultSeconds`). A run of pipes: you **clamber on top and crawl** at `crawlSpeedMultiplier` (40%) and climb down automatically when you step off.
 - **Dash** (replaced sprint, Overcooked-style): tap for a quick burst in the direction you're pushing (or facing), also while carrying. `dashDistance` (2.2 m), `dashSpeed` (15 m/s), `dashCooldown` (0.35 s). `sprintMultiplier` is still in the config but unused.
-- **The pit is open:** walk or ride into it and your critter tumbles in, dropping what it held. Reprinting costs `pitRespawnCost` ($50) from the round's earnings, or from LAB FUNDING off the clock (the bank can go negative); free at the base (`freePitInBase`). After `pitRespawnDelay` (1.6 s) it comes back on an arrival pad at its locker. Loose pieces are kept out by a guard.
+- **The pit:** a safety railing (yellow rails, black posts, invisible walls) closes its west, north and east sides so nobody strolls in by accident; the south side, where the belt feeds in, stays open. Ride the belt (or chase a piece) in and your critter tumbles in, dropping what it held. Reprinting costs `pitRespawnCost` ($50) from the round's earnings, or from LAB FUNDING off the clock (the bank can go negative); free at the base (`freePitInBase`). After `pitRespawnDelay` (1.6 s) it comes back on an arrival pad at its locker. Loose pieces are kept out by a guard.
 
 ### The flow
 - **Countdown:** `countdownSeconds` (32 s). The spout's wheel spins faster, it shakes and puffs steam, its red eye follows the nearest player and glows hotter, and its sight glass fills over `spoutFillSeconds` (8 s). Then the liquid bursts out.
@@ -148,11 +149,22 @@ The funnel catches whichever stream leaked into the water bottle (see [Items](#i
 When the liquid spills:
 - **Results:** the big back-wall monitor shows distance, loops, earnings, wasted pieces, the belt and flow speed bonuses, LAB FUNDING and per-player performance notes (most pipes laid, master thief, demolition expert, butterfingers, bunny hopper). New unlocks go at the top. During play it shows an ominous "monitoring subjects" screen.
 - **Camera:** drops in closer, tilts up to show the wall, and follows the group. Everyone can roam, jump and dash, and new players can join.
-- **Teleporters rise** from under the floor in the top walkway like a secret elevator, one after the other: hazard doors slide open, the teleporter rides up the shaft and lands with a thunk, and the frame stays as its platform (standing on one only counts once it has landed). Each has a riveted steel deck with a hazard ring, an arch of pillars wrapped in copper and chrome pipes, a downward emitter, twin Tesla coils and an amperage meter. Its plaque reads ~~INCINERATOR~~ ~~CLONE REINTEGRATION~~ TELEPORTER, with an LED strip showing the destination.
-- **Choices:** a win gives **RETRY**, **BACK TO BASE** (middle) and **NEXT**; a loss gives RETRY and BACK TO BASE.
-- **Charging:** while *every* player stands on *a* teleporter, the charge builds over `readyCountdownSeconds` (3). Coils hum louder and higher, arcs crawl between coils and emitter, the meter climbs blue → yellow → red, and the HUD and monitor count up "CHARGING 74% · 6,660 AMPS". Stepping off bleeds it away fast.
+- **The secret door opens** and the teleporters wait in the [teleporter room](#the-teleporter-room) behind it. The HUD reads "The teleporters are through the door on the right" until someone walks in.
+- **Teleporters rise** from under the floor like a secret elevator, one after the other: hazard doors slide open, the teleporter rides up the shaft and lands with a thunk, and the frame stays as its platform (standing on one only counts once it has landed). Each has a riveted steel deck with a hazard ring, an arch of pillars wrapped in copper and chrome pipes, a downward emitter, twin Tesla coils and an amperage meter. Its plaque has a small "DEPT. OF SUBJECT LOGISTICS · UNIT 7-B" line over a big LED strip with just the destination (CHAMBER 07, BASE), as large as fits.
+- **Choices:** the front row has **CHAMBER nn** (retry, orange), **BASE** (middle) and **CHAMBER nn+1** (next, green) on a win, or retry and BASE on a loss. Behind them is a teleporter for every floor reached so far (see [the teleporter room](#the-teleporter-room)).
+- **Charging:** while *every* player stands on *a* teleporter, the charge builds over `readyCountdownSeconds` (3). Coils hum louder and higher, arcs crawl between coils and emitter, the meter climbs blue → yellow → red, and the HUD and monitor count up "CHARGING 74% · 6,660 AMPS", followed by the occupied teleporters and how many stand on each. Stepping off bleeds it away fast.
 - **The strike:** a random ready player is picked and the game goes to their pad (3 on NEXT and 1 on RETRY is a 3-in-4 chance of NEXT). The current roulettes between the occupied pads, then lightning strikes them all: white flash, thunder, a big shake, and every critter gets a half-second cartoon electrocution (flickering to an x-ray skeleton in a shower of sparks), chars black in a puff of smoke, stands for a beat and crumbles to dust. The coils go dead, the music cuts, and after about 2 seconds of silence everyone materialises in the next room while the music fades back in.
 - **Next chamber:** the chamber number goes up, grime rises by `grimePerChamber` (0.2), and a winning chamber's earnings are added to LAB FUNDING. Retrying keeps the bank as it is. Passing a chamber unlocks the next.
+
+### The teleporter room
+Every room has a **secret door** in its right wall: the last three full columns of wall panels before the back corner, three panels high.
+- **Opening:** whenever the teleporters would appear (someone has joined at the base, or a chamber's liquid spilled), the panel columns unlatch with a little hop and slide down into a floor slot one after another (clank, creak, a thunk and a dust puff each), then a double-sided green **EXIT** blade sign slides out of the wall just south of the door, overshoots, and flickers on.
+- **The room:** a copy of the chamber's footprint on the other side of the wall (same width and depth, open at the front like the chamber), switched off until the door starts opening so it can't be spotted over the wall.
+- **Teleporters rise once someone walks in**, from the back: the front row (retry, base, next) first, then the floors one after the other, the boss floor last.
+- **Layout, back to front:** a fast belt at the same depth as the chamber's top belt; the front row; floors **01–09**, three to a row, left to right; and floor **10**, the boss floor, centred on its own row at the very front. Rows are spaced to fit the room (3.9–4.6 apart). Floors reached so far (`Progress.Furthest`) get a working teleporter; locked ones get a shut hatch with the number and LOCKED stencilled across its doors. The boss floor is red: its ring, its LED, and its locked stencil. Floors past 10 aren't in the room (NEXT still gets you there).
+- **Express belts (32× `beltSpeed`):** two belts you can ride, both ending lined up with the boss floor's teleporter, a strip of floor short of its hatch. The right one comes up out of a floor chute just past the doorway, runs east along the back behind the front row, south down the gap between the teleporters and the far wall, and west to the boss floor. The left one comes up out of a chute just south of the doorway (which stays clear) and runs south down the near wall, then east. They're scenery (`DecorBelt`): no pieces, no pit, no cost.
+- **The ghost** can float through the open doorway and around the room.
+- The teleporters' and belts' layout is in `GameManager` (`PadSpot`, `FloorSpot`, `BuildTeleporterBelt`, `FloorCount`, `BossFloor`); the door and room in `SecretDoor`.
 
 ### Arrival pads
 Joining, arriving in a new chamber and coming back from the pit all use the same little elevator at your locker: a hatch slides open, a pad rises in a beam of your player color, your critter materialises, the pad sinks and the hatch shuts. In a new chamber the pads come up one after another.
@@ -163,17 +175,17 @@ Joining, arriving in a new chamber and coming back from the pit all use the same
 
 The game starts here (`startInBase`). It's "chamber 00": the same kind of room, with no clock.
 - **Practice:** the board and belt run in free play; the pit is free.
-- **Grime:** as grimy as the deepest chamber reached, using that chamber's liquid color.
+- **Grime:** as grimy as the deepest chamber reached, using that chamber's liquid color. *(Being reworked into a running value that spills change: see "In progress" in [HANDOFF.md](HANDOFF.md).)*
 - **Layout:** the same as every chamber: lockers on the far left of the back wall, then a row of `baseVendingMachines` (6) machines: Backpack, A Count Ant, Lucky Pirate's Foot, Spider Monkey Serum, Spoon, and the water bottle as a placeholder.
 - **Monitor:** the deepest chamber, lab funding, whether you have water bottles, and how many subjects have joined.
-- **Leaving:** once someone has joined, the teleporters rise: the first time just CHAMBER 01; after that **FROM THE TOP: CHAMBER 01** and **CONTINUE: CHAMBER N** (the deepest reached, saved between sessions). Everyone stands on one, the same as between chambers.
+- **Leaving:** once someone has joined, the secret door opens onto the [teleporter room](#the-teleporter-room): a teleporter for every floor reached so far (saved between sessions), from CHAMBER 01 up, and nothing in the front row. Everyone stands on one, the same as between chambers.
 - **Coming back:** pick BACK TO BASE at the end of any chamber.
 
 ---
 
 ## Rooms and machines
 
-Every room has the same layout: lockers on the far left of the back wall (behind a strip of floor past the top belt, `closetStripDepth`), machines on the right of it. Each chamber has its own item's machine:
+Every room has the same layout: lockers on the far left of the back wall (behind a strip of floor past the top belt, `closetStripDepth`), machines on the right of it, and the [secret door](#the-teleporter-room) in the right wall. Each chamber has its own item's machine:
 
 | Chamber | Machines |
 |---|---|
@@ -205,7 +217,7 @@ The liquid for each chamber comes from the [liquid list](#the-liquid-list). The 
 | **Lucky Pirate's Foot** (just a peg leg) | Base | `pirateFootPrice` $2,000 | Luck +`pirateFootLuck` (50%): every lucky-break chance is ×(1 + luck). A green **LUCKY!** pops up whenever something only happened thanks to luck. Lucky breaks so far: BONUS x2 pipes and the Crossing Sign's extra crosses. |
 | **Spider Monkey Serum** (pink corked vial with a monkey tail) | Base | `serumPrice` $1,800; refills `serumRefillPrice` $500 | `serumCharges` (4) doses. A dose lasts the whole chamber: walk into a pipe and you climb or vault it with no jump, and climbing and crawling on top go at walking speed. Once owned, its machine sells refills (everyone back to full). |
 | **Spoon** | Base | `spoonPrice` $2,500 | "Pipes aren't real, they can't hurt you." Passive, ON DASH: dashes go through pipes (placed and loose); a dash that would end inside one carries on until clear. |
-| **Water bottle** | Chamber 1 (and the base, as a placeholder) | `waterBottlePrice` (code default $750; the asset currently has $0) | `waterBottleCharges` (10) sips, each player's own. A sip lasts `waterBottleBuffSeconds` (45 s): walk ×`waterBottleSpeedMultiplier` (1.2) and dash `waterBottleDashes` (2) times in a row. **Sipping:** the critter pulls the bottle into its right hand, lifts it, tips its head back for a few glugs and puts it away (about 2 s); you can keep moving. |
+| **Water bottle** | Chamber 1 (and the base, as a placeholder) | `waterBottlePrice` (code default $750; the asset currently has $400) | `waterBottleCharges` (10) sips, each player's own. A sip lasts `waterBottleBuffSeconds` (45 s): walk ×`waterBottleSpeedMultiplier` (1.2) and dash `waterBottleDashes` (2) times in a row. **Sipping:** the critter pulls the bottle into its right hand, lifts it, tips its head back for a few glugs and puts it away (about 2 s); you can keep moving. |
 | **Funnel** | Chamber 2 | `funnelPrice` $2,500 (needs the bottle) | Stand in the leak when a chamber ends to catch it in your bottle. See [Drinking it](#drinking-it-with-the-funnel). |
 | **Crossing Sign** (a crossing guard's STOP paddle) | Chamber 3 | `crossingSignPrice` $3,000 | Crosses come down the belt `crossingSignBoost` (+25%) more often: some pieces turn into crosses as they're dealt, and each rides the belt with the paddle held up over it, waving (plus LUCKY! if luck tipped it). |
 | **Filter Piece** (consumable) | Chamber 4 onward | `filterPrice` $400 each | Drops straight into the buyer's hands (what you held goes in your backpack, or on the floor). See [Filters](#filters). |
@@ -238,7 +250,7 @@ One locker per player in every room, on the far left of the back wall, with the 
 - **Use:** walk onto the hazard plate in front of the door and press Use. You drop what you're holding and hop inside. Up/down picks a row; left/right (or either rotate key) changes it live; Use or Jump steps back out. The panel docks along the bottom of the screen, one column per player (up to 9 rows).
 - **Rows:** PLAYER (player color), SPECIES, SIZE, COLOR (body), HAT, TORSO, (ARMS), (LEGS), FEET. ARMS and LEGS appear only once something in them is unlocked.
 - **Each row plays a show:**
-  - **Species and size (the Bio-Reactor):** YETI, SKELETON, CHIHUAHUA, SLIME, or SHARC once unlocked, each SMALL, MEDIUM or LARGE. A glass tube rises from under the floor grate, floods with this chamber's liquid, swaps your body when full, then drains.
+  - **Species and size (the Bio-Reactor):** YETI, SKELETON, CHIHUAHUA, SLIME, or SHARC once unlocked, each SMALL, MEDIUM or LARGE. A glass tube rises from under the floor grate, floods with this chamber's liquid, swaps your body when full, then drains. You can cycle as fast as you like: the row's value changes on every press, and each press restarts the flood with the latest pick.
   - **Body color (the Spray Booth):** four nozzles blast you with the new color. Your floor ring keeps your player color, so you can always find yourself.
   - **Outfit (the Wardrobe):** a puff. Hats: baseball cap, cowboy hat, sombrero, shower cap. Torso: lab coat, flannel shirt, biker jacket. Feet: clown shoes, sneakers, military boots.
 - **Saved looks:** per player slot (`pd_look0`…`pd_look3`), so P2 comes back as P2.
@@ -284,7 +296,7 @@ Cosmetics are earned or found, never bought. Locked items are skipped in the loc
   | `python icons.py <out_dir>` | all icons |
   | `python icons.py badge` / `filter` / `new` / `backpack` | single icons |
 
-- **Part contract** (what Unity looks for): `Body` with `Head` under it (a mesh, or an empty for the slime); `Eye_L`/`Eye_R` under the Head; `Anchor_Hat`, `Anchor_Torso`; `Arm_L/R` (pivot at the shoulder) and `Hand_L/R`; `Leg_L/R` (pivot at the hip) with `Shoe_L/R` under them.
+- **Part contract** (what Unity looks for): `Body` with `Head` under it (a mesh, or an empty for the slime); `Eye_L`/`Eye_R` under the Head; `Anchor_Hat` (some species also make an `Anchor_Torso`, which the game doesn't read); `Arm_L/R` (pivot at the shoulder) and `Hand_L/R`; `Leg_L/R` (pivot at the hip) with `Shoe_L/R` under them.
 - **Material contract:** `Tint` / `TintShade` take the body color; `Slime` is a transparent tint and marks the model as a blob; `Glow` is emissive; `Pupil`; anything else keeps its own color.
 - **Runtime rig (`PlayerRig`):** loads the FBX, turns it upright and facing forward whatever axes it used, and puts the feet on the floor. It animates each part in code: eyes blink, drift and track whatever you're about to grab, the head shakes, the body squashes and bobs, hands float and carry at chest height, arms aim at the hands, legs swing from the hip. Critters cheer on loops and goals and droop when the liquid spills. Hats, shirts, trunks, floaties and shoes are fitted to the measured body; the floor ring and collider grow with the size.
 
@@ -307,11 +319,13 @@ Cosmetics are earned or found, never bought. Locked items are skipped in the loc
 **Esc / Start** opens a framed panel: **Resume** (selected by default; Esc or Start again also resumes), **Controls**, **Settings**, **Players**, **Restart Chamber** (R / Select also restarts from the pause screen) and **Quit Game**.
 - **Navigating:** stick, D-pad, WASD or arrows move; A, Start, Space, Enter or a click confirms; B, Esc or Backspace goes back.
 - **Controls:** one scrolling list (keyboard, then controller) with aligned columns.
-- **Settings:** display mode (borderless, fullscreen, windowed), resolution, V-Sync, anti-aliasing (off, FXAA, SMAA), render scale, master and music volume, screen shake. Left/right or the `<` / `>` buttons change a value; volumes and shake also have a draggable bar. Saved between sessions. Render scale only applies in builds (so it can't change the project's URP asset in the editor).
+- **Settings:** display mode (borderless, fullscreen, windowed), resolution, V-Sync, anti-aliasing (off, FXAA, SMAA), render scale, master and music volume, screen shake, and camera (Fixed or Follow; see [Camera](#camera)). Left/right or the `<` / `>` buttons change a value; volumes and shake also have a draggable bar. Saved between sessions. Render scale only applies in builds (so it can't change the project's URP asset in the editor).
 - **Players:** lists everyone; picking one makes them leave (they poof with confetti, drop what they're holding, and their slot and device are free again). It opens on the player whose controller opened the menu. Removing the last player closes the menu.
 
 ### Camera
 `gameplayCameraPitch` (48) and `gameplayCameraZoom` (0.85; 1 = fit the room, higher = closer) set the round camera. Between rounds the follow-cam fits every player in frame and zooms out as they spread, tilting from `intermissionCameraPitch` (27, flatter, showing the wall) when the group is at the back to `intermissionCameraPitchFront` (20.1) at the front; `intermissionCameraZoom` (0.598) scales it. All four update live.
+
+The **Camera** setting (Settings page, saved as `up_followcam`) picks the round camera: **Fixed** (default, the whole room) or **Follow**, which uses the between-rounds follow-cam during rounds too. Switching takes effect straight away.
 
 ---
 
@@ -335,8 +349,10 @@ An original 80s-arcade loop with synced layers:
 - **Pitch and tempo:** `musicPitchSemitones` (-3) and `musicSpeed` (0.84) regenerate the music with transposed notes and a new tempo (drums keep their pitch), in place, once the slider stops moving.
 
 ### Recorded stems
-A **stem** is one instrument's part of a song as its own file; played together in sync they make the full mix. Songs live in `Resources/Songs/<musicSong>`. Files are named `layer_variant` (`drums_008`, `bass_005`, `synth_012`, `vocals_003`…); files without an underscore (full mixes) are ignored and unloaded, and every stem in a song must be the same length. All variants of every layer play at once, started on the same DSP tick and sample-locked; only the chosen variant of each layer is audible.
-- **Variants:** layers in `musicStemFixedLayers` (drums) are picked once; every other layer picks a new random variant (never the same twice in a row) each time the loop comes round, with a ~40 ms crossfade.
+A **stem** is one instrument's part of a song as its own file; played together in sync they make the full mix. Songs live in `Resources/Songs/<musicSong>` (`ohno` now; `Overflow` too). Files are named `layer_variant` (`drums_008`, `bass_005`, `synth_012`, `vocals_003`…); files without an underscore (full mixes) are ignored and unloaded, and every stem in a song must be the same length.
+- **One variant per layer at a time:** clips load as headers only. Shortly before the loop comes round, each layer that re-rolls picks its next variant and loads it in the background; at the loop point it starts and every playing stem is re-seeked to the same sample in the same frame, and the old one unloads. Memory stays at about one clip per layer however many variants a song has. A variant that hasn't loaded in time is logged, and that layer repeats its current one.
+- **Variants:** layers in `musicStemFixedLayers` (drums) are picked once; every other layer picks a new variant each time the loop comes round, with a ~40 ms crossfade. Picks work like a shuffled deck: every allowed variant plays once before any repeats, never the same twice in a row.
+- **The Song asset** (`Resources/Songs/<song>/Song.asset`, *Create → Under Pressure → Song*; its **Scan Folder** button adds the folder's stems) sets when each variant may play: `minGrime` and `maxGrime`, and a `weight` (0 = never). This uses the **music grime**, which goes by chamber (the deepest reached, at the base), not the lab's look: `musicGrimePerChamber` (0.1, so chamber 11 is full grime). No Song asset = every variant is always allowed.
 - **Lead** (`musicStemLeadLayers`, vocals): with `musicStemLeadInChambers` off (default) they're silent in chamber rounds and play only off the clock and at the base; on, they follow the synth lead's envelope. `musicStemLeadOn` off drops them entirely (not even loaded). `musicLeadVolume` is their level.
 - **Flow layers** (`musicStemFlowLayers`, synth): the build-up. Silent at the base and off the clock, they creep in over the last `musicStemFlowInSeconds` (8) of the countdown, play fully while the liquid flows, and drop out for panic.
 - **Everything else** (drums, bass) always plays, except during panic.
@@ -373,13 +389,14 @@ With `musicPanicRiser` on (default), the music never swaps out for panic. Instea
 Assets/UnderPressure/
 ├─ Scripts/
 │  ├─ Core/     Game (service locator), GameBootstrap (rooms, base vs chamber, layout, spawns, machines),
-│  │            GameManager (rounds, money, loops, spills, teleporters, base mode, funnel catch), GameConfig,
+│  │            GameManager (rounds, money, loops, spills, teleporters + their room's layout, base mode, funnel catch),
+│  │            GameConfig, SongDef (a song's variant rules),
 │  │            Items (shop), Progress (unlocks, stats, deepest chamber), ReadyPad (teleporters + elevator),
 │  │            Cash (money formatting), BuildInfo (version), Mats/Prims (runtime art), Dir (grid directions + layers)
 │  ├─ Board/    GridBoard (tiles, occupancy, BFS connectivity), Spout, SpoutHologram
 │  ├─ Pipes/    PipeBuilder (procedural geometry & channel paths, the filter T + canister), PipePiece (states,
 │  │            fill, latch visuals, bursts, shatter), TornEnd (burst petals), GlassShatter (stump + shards)
-│  ├─ Conveyor/ Conveyor (belt, spawn bag, Crossing Sign), BeltLever
+│  ├─ Conveyor/ Conveyor (belt, spawn bag, Crossing Sign, pit + railing), BeltLever, DecorBelt (rideable scenery belts)
 │  ├─ Flow/     FlowController (multi-stream flow, filters, loops, look-ahead walkers, bursts),
 │  │            LiquidGrade (what a stream is: liquid links, + chains, colors, pay)
 │  ├─ Player/   PlayerController (movement, climb, interaction, locker mode, sips, ghost mode), PlayerRig (FBX
@@ -388,10 +405,11 @@ Assets/UnderPressure/
 │  │            Closet (lockers), Accessories, VendingMachine, ArrivalPad, NewBadge, PlacementPreview, SlimeTrail
 │  ├─ UI/       Hud (roster, pipes goal, panels, NEW! stickers, UI confetti), HoloMoney, InventoryPanel,
 │  │            Glyphs (+ KeyGlyph), FloatingTag, OutletLabel, PauseMenu, GameSettings
-│  ├─ Style/    ChamberBuilder (room, walls, doorways, decor, Flicker, Watcher), Theme (grime, liquids), WallMonitor
-│  └─ Juice/    Juice (hit-stop, slow-mo, tweens, Springy), CameraRig (shake), Fx (particles), Popups (+ Banner),
+│  ├─ Style/    ChamberBuilder (room, walls, doorways, decor, Flicker, Watcher), SecretDoor (door, EXIT sign,
+│  │            teleporter room), Theme (grime, liquids), WallMonitor
+│  └─ Juice/    Juice (hit-stop, slow-mo, tweens, Springy), CameraRig (shake, follow-cam), Fx (particles), Popups (+ Banner),
 │               Sfx (synthesized audio), Music (synth + stems, ducking), PanicRiser (live tension synth),
-│               CharredRemains, SlimePuddle, Tossed (debris)
+│               CharredRemains, SlimePuddle, Tossed (debris), GrimeOverlay (work in progress: see HANDOFF)
 ├─ Editor/      UnderPressureMenu, UnderPressureBuild (shader keep-alive), UnderPressureIconImport
 ├─ Resources/   Characters/ (5 species × S/M/L FBX), Icons/ (glyphs, items, badge), Songs/ (music stems),
 │               UnderPressureShaderKeep/
@@ -409,5 +427,5 @@ Assets/UnderPressure/
 ## Known limits
 
 - The placeholder geometry is primitive-based (hundreds of small renderers). Fine for prototyping; real meshes will batch better.
-- Stem memory: every variant of every layer is loaded and playing (muted) at once. Set the clips to *Compressed In Memory*, and keep an eye on Unity's 32-voice limit as songs grow. Everything in `Resources/Songs` ships in builds, including unused full mixes.
+- Stems: only one variant per layer is loaded at a time, but every variant gets an AudioSource, and everything in `Resources/Songs` ships in builds, including unused full mixes and songs not in use.
 - Valve tempo on stems is pitch-based, so fast flow sounds chipmunky.

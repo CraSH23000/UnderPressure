@@ -22,8 +22,8 @@ namespace UnderPressure
         Bounds frame;
         float builtPitch = -1f, builtZoom = -1f, builtAspect = -1f;
 
-        // between-rounds follow mode
-        bool follow;
+        // between-rounds follow mode (also during rounds, with the Follow camera setting)
+        bool follow, followBySetting;
         Vector3 followPos, followVel;
         Quaternion followRot;
         Vector3 lookExtra; // a world point we also want in view (the wall monitor)
@@ -35,9 +35,16 @@ namespace UnderPressure
             baseFov = overviewFov = fov;
             seed = Random.value * 100f;
             frame = roomFrame;
-            follow = false;
+            follow = followBySetting = false;
             builtPitch = -1f;
             RebuildOverview(true);
+        }
+
+        /// <summary>The room grew: frame the new size (follow mode, if on, carries on as it was).</summary>
+        public void SetFrame(Bounds roomFrame)
+        {
+            frame = roomFrame;
+            RebuildOverview(false);
         }
 
         float Pitch => Game.Config != null ? Game.Config.gameplayCameraPitch : 48f;
@@ -73,6 +80,7 @@ namespace UnderPressure
         public void BeginFollow(Vector3 alsoLookAt)
         {
             follow = true;
+            followBySetting = false; // the game asked for it: stays on whatever the setting says
             lookExtra = alsoLookAt;
             followPos = basePos;
             followRot = baseRot;
@@ -130,6 +138,13 @@ namespace UnderPressure
         {
             if (Cam == null) return;
             float dt = Time.unscaledDeltaTime;
+            // the Follow camera setting: follow during rounds too (and hand back the fixed view if it's switched off)
+            if (GameSettings.FollowCamera && !follow)
+            {
+                BeginFollow(Game.Monitor != null ? Game.Monitor.Center : frame.center + Vector3.up * 3f);
+                followBySetting = true;
+            }
+            else if (!GameSettings.FollowCamera && followBySetting) { follow = followBySetting = false; baseFov = overviewFov; }
             if (follow) UpdateFollow(dt);
             else if (!Mathf.Approximately(Pitch, builtPitch) || !Mathf.Approximately(Zoom, builtZoom) || !Mathf.Approximately(Cam.aspect, builtAspect))
                 RebuildOverview(false); // live-tune from the config asset

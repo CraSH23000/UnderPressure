@@ -8,10 +8,21 @@ namespace UnderPressure
     /// </summary>
     public static class ChamberBuilder
     {
-        const float WallH = 6.4f, PanelSize = 1.6f, Gap = 0.07f;
+        public const float WallH = 6.4f, PanelSize = 1.6f, Gap = 0.07f;
+
+        /// <summary>The secret door in the right wall (base only): z range of its three panel columns, and its height.</summary>
+        public static bool HasSecretDoor { get; private set; }
+        public static float SecretDoorZ0 { get; private set; }
+        public static float SecretDoorZ1 { get; private set; }
+        public const float SecretDoorH = PanelSize * 3f;
+        static bool InSecretDoor(float z0, float z1) => HasSecretDoor && z1 > SecretDoorZ0 + 0.01f && z0 < SecretDoorZ1 - 0.01f;
 
         /// <summary>Where the scoreboard monitor goes on the back wall (x/y in world units), filled by Build.</summary>
         public static Rect MonitorRect { get; private set; }
+        /// <summary>How far in front of its usual spot the monitor stands (it's over the window).</summary>
+        public static float MonitorOutset { get; private set; }
+        /// <summary>The wall z to hand the monitor: the back wall, brought forward when it's over the window.</summary>
+        public static float MonitorWallZ => BackWallZ - MonitorOutset;
         public static float BackWallZ { get; private set; }
 
         public struct Layout
@@ -22,6 +33,7 @@ namespace UnderPressure
             public float[] closetXs;              // doorway centres of cosmetic closets set into the back wall
             public bool hasVending; public float vendingZ; // where the vending machine stands on the right wall
             public Vector2 backClear;             // x range along the back wall kept free of junk (the base's machine row)
+            public bool secretDoor;               // a 3x3-panel door in the right wall: the last three full columns before the back corner
         }
 
         public static void Build(Transform parent, Layout L, int chamberNumber, int seed)
@@ -30,6 +42,15 @@ namespace UnderPressure
             float g = Theme.Grime;
             var walk = L.walk;
             var root = Prims.Empty("Chamber", parent, Vector3.zero).transform;
+
+            HasSecretDoor = L.secretDoor;
+            if (HasSecretDoor)
+            {
+                // the side-wall panel grid starts at the front wall: the door is its last three full columns
+                int cols = Mathf.FloorToInt((L.zBack - L.zFront) / PanelSize + 0.001f);
+                SecretDoorZ0 = L.zFront + (cols - 3) * PanelSize;
+                SecretDoorZ1 = SecretDoorZ0 + 3f * PanelSize;
+            }
 
             BuildFloor(root, L, rng);
             BuildBackWall(root, L, rng, chamberNumber);
@@ -71,7 +92,10 @@ namespace UnderPressure
 
             float h = 4f, th = 0.5f;
             AddWall(root, new Vector3(walk.xMin - th * 0.5f, h * 0.5f, walk.center.y), new Vector3(th, h, walk.height + 2f));
-            AddWall(root, new Vector3(walk.xMax + th * 0.5f, h * 0.5f, walk.center.y), new Vector3(th, h, walk.height + 2f));
+            if (!HasSecretDoor) AddWall(root, new Vector3(walk.xMax + th * 0.5f, h * 0.5f, walk.center.y), new Vector3(th, h, walk.height + 2f));
+            else // leave the doorway open (the door itself blocks it until it slides away)
+                foreach (var seg in Segments(walk.yMin - 1f, walk.yMax + 1f, new System.Collections.Generic.List<Rect> { Rect.MinMaxRect(SecretDoorZ0, 0f, SecretDoorZ1, 1f) }))
+                    AddWall(root, new Vector3(walk.xMax + th * 0.5f, h * 0.5f, (seg.x + seg.y) * 0.5f), new Vector3(th, h, seg.y - seg.x));
             AddWall(root, new Vector3(walk.center.x, h * 0.5f, walk.yMin - th * 0.5f), new Vector3(walk.width + 2f, h, th));
             AddWall(root, new Vector3(walk.center.x, h * 0.5f, walk.yMax + th * 0.5f), new Vector3(walk.width + 2f, h, th));
         }
@@ -86,7 +110,7 @@ namespace UnderPressure
 
         // ------------------------------------------------------------------ walls
 
-        static Material PanelMat(System.Random rng)
+        internal static Material PanelMat(System.Random rng)
         {
             float shade = (float)rng.NextDouble() * 0.05f + Theme.Grime * (float)rng.NextDouble() * 0.25f;
             return Mats.Lit(Color.Lerp(Theme.Wall, Theme.Stain, Mathf.Round(shade * 20f) / 20f), 0.6f);
@@ -140,15 +164,21 @@ namespace UnderPressure
 
             if (roomy) ObservationWindow(root, window, z);
 
-            // space for the scoreboard monitor between the sign and the window
-            float mx0 = sign.xMax + 0.5f, mx1 = roomy ? window.xMin - 0.5f : L.xRight - 0.8f;
-            if (mx1 - mx0 < 4f) { float c = (mx0 + mx1) * 0.5f; mx0 = c - 2f; mx1 = c + 2f; }
-            float mw = Mathf.Min(mx1 - mx0, 9f);
-            float mcx = (mx0 + mx1) * 0.5f;
+            // the scoreboard monitor, between the sign and the window: 7 to 9 wide. Where there isn't that much room
+            // (a small room that grows with the players) it stays big and covers part of the window instead.
+            const float MonitorMinW = 7f, MonitorMaxW = 9f;
+            float mx0 = sign.xMax + 0.5f;
+            float space = (roomy ? window.xMin - 0.5f : L.xRight - 0.8f) - mx0;
+            float mw = Mathf.Min(Mathf.Clamp(space, MonitorMinW, MonitorMaxW), L.xRight - 0.8f - mx0);
+            float mcx = space >= mw ? mx0 + space * 0.5f : mx0 + mw * 0.5f;
             float my0 = 1.7f;
             foreach (var d in doors) // keep the monitor clear of closet headers
                 if (d.xMax > mcx - mw * 0.5f && d.xMin < mcx + mw * 0.5f) my0 = Closet.Height + Closet.HeaderH + 0.15f;
+            // and above the vending machines (2.05 tall) where it's over them
+            if (L.backClear.y > L.backClear.x && mcx + mw * 0.5f > L.backClear.x && mcx - mw * 0.5f < L.backClear.y) my0 = Mathf.Max(my0, 2.35f);
             MonitorRect = Rect.MinMaxRect(mcx - mw * 0.5f, my0, mcx + mw * 0.5f, Mathf.Min(my0 + mw * 0.5f, 5.6f));
+            // over the window it stands a little further off the wall, so the window's frame doesn't poke through it
+            MonitorOutset = roomy && mcx + mw * 0.5f > window.xMin ? 0.2f : 0f;
             BackWallZ = z;
             ChamberSign(root, sign, z, chamberNumber);
         }
@@ -186,8 +216,21 @@ namespace UnderPressure
         static void BuildSideWall(Transform root, Layout L, System.Random rng, float x, float inward)
         {
             float d = L.zBack - L.zFront;
-            Prims.Make(PrimitiveType.Cube, root, new Vector3(x - inward * 0.35f, WallH * 0.5f, (L.zBack + L.zFront) * 0.5f), new Vector3(0.3f, WallH, d + 0.4f),
-                Mats.Lit(Theme.WallBacking, 0.2f), null, "SideWallBacking");
+            bool door = HasSecretDoor && inward < 0f; // the secret door is in the right wall
+            var doorHoles = new System.Collections.Generic.List<Rect>();
+            if (door) doorHoles.Add(Rect.MinMaxRect(SecretDoorZ0, 0f, SecretDoorZ1, SecretDoorH));
+            var backingMat = Mats.Lit(Theme.WallBacking, 0.2f);
+            if (!door)
+                Prims.Make(PrimitiveType.Cube, root, new Vector3(x - inward * 0.35f, WallH * 0.5f, (L.zBack + L.zFront) * 0.5f), new Vector3(0.3f, WallH, d + 0.4f),
+                    backingMat, null, "SideWallBacking");
+            else
+            {
+                Prims.Make(PrimitiveType.Cube, root, new Vector3(x - inward * 0.35f, (WallH + SecretDoorH) * 0.5f, (L.zBack + L.zFront) * 0.5f),
+                    new Vector3(0.3f, WallH - SecretDoorH, d + 0.4f), backingMat, null, "SideWallBacking");
+                foreach (var seg in Segments(L.zFront - 0.2f, L.zBack + 0.2f, doorHoles))
+                    Prims.Make(PrimitiveType.Cube, root, new Vector3(x - inward * 0.35f, SecretDoorH * 0.5f, (seg.x + seg.y) * 0.5f),
+                        new Vector3(0.3f, SecretDoorH, seg.y - seg.x), backingMat, null, "SideWallBackingLow");
+            }
             var rot = Quaternion.Euler(0f, inward > 0 ? 90f : -90f, 0f);
             bool hasSlot = inward > 0f; // the belt enters through the left wall
             Rect slot = Rect.MinMaxRect(L.slotZ - L.slotHalfWidth - 0.25f, 0f, L.slotZ + L.slotHalfWidth + 0.25f, 1.7f);
@@ -195,10 +238,12 @@ namespace UnderPressure
             for (float y = 0f; y < WallH - 0.01f; y += PanelSize)
             {
                 if (hasSlot && new Rect(z, y, PanelSize, PanelSize).Overlaps(slot)) continue;
+                if (door && y < SecretDoorH - 0.01f && InSecretDoor(z, z + PanelSize)) continue; // SecretDoor builds these
                 WallPanel(root, new Vector3(x - inward * 0.12f, y + PanelSize * 0.5f, z + PanelSize * 0.5f), rot, rng);
             }
             if (hasSlot) BeltSlot(root, slot, x);
-            Prims.Make(PrimitiveType.Cube, root, new Vector3(x, 0.15f, (L.zBack + L.zFront) * 0.5f), new Vector3(0.14f, 0.3f, d), Mats.Lit(Theme.WallTrim, 0.4f, 0.4f), null, "KickPlate");
+            foreach (var seg in Segments(L.zFront, L.zBack, doorHoles))
+                Prims.Make(PrimitiveType.Cube, root, new Vector3(x, 0.15f, (seg.x + seg.y) * 0.5f), new Vector3(0.14f, 0.3f, seg.y - seg.x), Mats.Lit(Theme.WallTrim, 0.4f, 0.4f), null, "KickPlate");
             LightStrip(root, new Vector3(x + inward * 0.02f, WallH - 0.3f, (L.zBack + L.zFront) * 0.5f), new Vector3(0.1f, 0.14f, d - 1f), rng);
         }
 
@@ -211,7 +256,7 @@ namespace UnderPressure
                 t.localRotation = rot * Quaternion.Euler((float)(rng.NextDouble() - 0.5) * 18f * g, (float)(rng.NextDouble() - 0.5) * 10f * g, (float)(rng.NextDouble() - 0.5) * 14f * g);
         }
 
-        static void LightStrip(Transform root, Vector3 pos, Vector3 size, System.Random rng)
+        internal static void LightStrip(Transform root, Vector3 pos, Vector3 size, System.Random rng)
         {
             var on = Mats.Lit(Color.white, 0.9f, 0f, Theme.LightColor * 2.2f);
             var go = Prims.Make(PrimitiveType.Cube, root, pos, size, on, null, "LightStrip");
@@ -353,6 +398,7 @@ namespace UnderPressure
                 if (back && NearCloset(L, x, 0.4f)) continue; // keep the doorways clear
                 if (back && x > L.backClear.x - 0.3f && x < L.backClear.y) continue; // and the machine row
                 if (!back && L.hasVending && Mathf.Abs(z - L.vendingZ) < 1.0f) continue; // and the vending machine
+                if (!back && InSecretDoor(z - 0.5f, z + 0.5f)) continue; // and the secret door
                 Prims.Make(PrimitiveType.Cube, root, new Vector3(x, s * 0.5f, z), Vector3.one * s, junkMat,
                     Quaternion.Euler((float)rng.NextDouble() * 30f, (float)rng.NextDouble() * 360f, 0), "Junk");
             }

@@ -81,7 +81,7 @@ namespace UnderPressure
 
         public CritterLook Clone() => (CritterLook)MemberwiseClone();
 
-        public static CritterLook Default(int slot) => new CritterLook { color = slot % 4 };
+        public static CritterLook Default(int slot) => new CritterLook { color = JoinManager.DefaultColorIndex(slot) };
 
         static string Key(int slot) => "up_look" + slot;
 

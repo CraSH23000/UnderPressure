@@ -8,6 +8,9 @@ namespace UnderPressure
     /// </summary>
     public class BeltLever : MonoBehaviour
     {
+        /// <summary>Half its depth front to back (its collider), so it can be set right up against things.</summary>
+        public const float HalfDepth = 0.35f;
+
         Transform arm;
         Renderer[] lamps;
         Material lampOn, lampOff, lampHot;
@@ -63,7 +66,7 @@ namespace UnderPressure
             }
 
             var col = gameObject.AddComponent<BoxCollider>();
-            col.size = new Vector3(0.9f, 1.2f, 0.7f);
+            col.size = new Vector3(0.9f, 1.2f, HalfDepth * 2f);
             col.center = new Vector3(0, 0.6f, 0);
             gameObject.layer = Layers.Default;
         }

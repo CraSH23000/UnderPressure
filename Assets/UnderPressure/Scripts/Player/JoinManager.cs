@@ -11,14 +11,34 @@ namespace UnderPressure
     /// </summary>
     public class JoinManager : MonoBehaviour
     {
-        public const int MaxPlayers = 4;
+        /// <summary>The most players there can ever be (sizes per-player arrays).</summary>
+        public const int Capacity = 8;
+        /// <summary>How many can join: 8 when the room grows with the players (GameConfig.roomGrowsWithPlayers), else 4.</summary>
+        public static int MaxPlayers => Game.Config != null && Game.Config.roomGrowsWithPlayers ? Capacity : 4;
 
         /// <summary>Player colors come from the one color list (CritterLook.Colors), limited to the ones marked 'player'.
         /// Slots P1-P4 default to the first four.</summary>
         public static bool IsPlayerColor(int i) => i >= 0 && i < CritterLook.Colors.Length && CritterLook.Colors[i].player;
 
+        /// <summary>Slot n's default color (before anyone has picked): the n-th player color in the list.</summary>
+        public static int DefaultColorIndex(int slot)
+        {
+            int k = 0;
+            for (int i = 0; i < CritterLook.Colors.Length; i++)
+                if (IsPlayerColor(i) && k++ == slot) return i;
+            return slot % Mathf.Max(1, CritterLook.Colors.Length);
+        }
+
         /// <summary>Default color per slot (before anyone has picked).</summary>
-        public static Color[] PlayerColors => new[] { CritterLook.Colors[0].color, CritterLook.Colors[1].color, CritterLook.Colors[2].color, CritterLook.Colors[3].color };
+        public static Color[] PlayerColors
+        {
+            get
+            {
+                var c = new Color[Capacity];
+                for (int i = 0; i < Capacity; i++) c[i] = CritterLook.Colors[DefaultColorIndex(i)].color;
+                return c;
+            }
+        }
 
         public static JoinManager Instance { get; private set; }
 
@@ -42,7 +62,7 @@ namespace UnderPressure
         public void AssignColor(Slot slot)
         {
             if (IsPlayerColor(slot.colorIndex) && !Taken(slot.colorIndex, slot.index)) return;
-            int def = slot.index % 4;
+            int def = DefaultColorIndex(slot.index);
             int saved = PlayerPrefs.GetInt("up_pcolor" + slot.index, def);
             foreach (int c in new[] { saved, def })
                 if (IsPlayerColor(c) && !Taken(c, slot.index)) { slot.colorIndex = c; return; }
@@ -86,7 +106,8 @@ namespace UnderPressure
             // a click joins the ghost (one mouse, one ghost); not the click that just closed the pause menu
             var mouse = Mouse.current;
             if (mouse != null && mouse.leftButton.wasPressedThisFrame && Game.Config != null && Game.Config.enableGhost
-                && !HasScheme(ControlScheme.Mouse) && !PauseMenu.JustClosed && Slots.Count < MaxPlayers)
+                && !HasScheme(ControlScheme.Mouse) && !PauseMenu.JustClosed && Slots.Count < MaxPlayers
+                && ClickInsideGame(mouse))
                 Join(ControlScheme.Mouse, mouse);
             foreach (var gp in Gamepad.all)
             {
@@ -94,6 +115,14 @@ namespace UnderPressure
                 if ((gp.buttonSouth.wasPressedThisFrame || gp.buttonWest.wasPressedThisFrame || gp.startButton.wasPressedThisFrame) && !HasDevice(gp))
                     Join(ControlScheme.Gamepad, gp);
             }
+        }
+
+        /// <summary>The click landed on the game picture itself. In the editor the Game view's toolbar (Play Maximized,
+        /// Stats, Gizmos...) also reports clicks to the Input System, just outside the screen rect.</summary>
+        static bool ClickInsideGame(Mouse mouse)
+        {
+            var p = mouse.position.ReadValue();
+            return p.x >= 0 && p.y >= 0 && p.x < Screen.width && p.y < Screen.height;
         }
 
         int joinFrame = -1;

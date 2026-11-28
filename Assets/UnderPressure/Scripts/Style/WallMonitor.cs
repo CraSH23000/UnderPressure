@@ -38,13 +38,31 @@ namespace UnderPressure
             return m;
         }
 
-        void Build(float w, float h)
+        Transform frame;
+
+        /// <summary>The room grew (the back wall's space for the monitor changed): move and resize it, text and all.</summary>
+        public void Relayout(Rect wallRect, float wallZ)
         {
+            transform.position = new Vector3(wallRect.center.x, wallRect.center.y, wallZ - 0.12f);
+            BuildFrame(wallRect.width, wallRect.height);
+            canvasRect.localScale = Vector3.one * Mathf.Min(wallRect.width / PxW, wallRect.height / PxH);
+        }
+
+        void BuildFrame(float w, float h)
+        {
+            if (frame != null) Destroy(frame.gameObject);
+            frame = new GameObject("Frame").transform;
+            frame.SetParent(transform, false);
             var bezel = Mats.Lit(Theme.WallTrim, 0.6f, 0.5f);
-            Prims.Make(PrimitiveType.Cube, transform, new Vector3(0, 0, 0.05f), new Vector3(w + 0.3f, h + 0.3f, 0.2f), bezel, null, "Bezel");
+            Prims.Make(PrimitiveType.Cube, frame, new Vector3(0, 0, 0.05f), new Vector3(w + 0.3f, h + 0.3f, 0.2f), bezel, null, "Bezel");
             // little mount arms into the wall
             for (int s = -1; s <= 1; s += 2)
-                Prims.Make(PrimitiveType.Cube, transform, new Vector3(s * w * 0.35f, h * 0.5f + 0.25f, 0.1f), new Vector3(0.12f, 0.4f, 0.12f), bezel);
+                Prims.Make(PrimitiveType.Cube, frame, new Vector3(s * w * 0.35f, h * 0.5f + 0.25f, 0.1f), new Vector3(0.12f, 0.4f, 0.12f), bezel);
+        }
+
+        void Build(float w, float h)
+        {
+            BuildFrame(w, h);
 
             var cgo = new GameObject("Screen", typeof(RectTransform));
             cgo.transform.SetParent(transform, false);
